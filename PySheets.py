@@ -92,6 +92,9 @@ class PySheet:
         self.data = [row for row in self.data if row[header] == value]
         if drop: self.drop_column(header)
 
+    def sort(self, header: str, sort_func: Callable, reverse: bool = False):
+        self.data = sorted(self.data, key=sort_func, reverse=reverse)
+
     def filter_by_func(self, filter_func: Callable):
         self.data = [row for row in self.data if filter_func(row)]
 

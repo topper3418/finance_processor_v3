@@ -19,10 +19,25 @@ def get_csv_filepaths_from_directory(directory_path):
             # If the filepath is a CSV file, add it to the list of filepaths
             # Use double backslashes in the filepath to ensure it is properly formatted
             # for use in Windows
-            csv_filepaths.append(filepath.replace('/', '\\'))
+            if os.name == 'nt':
+                full_filepath = filepath.replace('/', '\\')
+            else:
+                full_filepath = filepath
+            csv_filepaths.append(full_filepath)
 
     # Return the list of filepaths
     return csv_filepaths
+
+
+def check_lookup(lookup_value, lookup_dict):
+    """takes in a thing to check and a lookup. if any of the matching values are in the lookup, it returns the key"""
+    for key, snippet_list in lookup_dict.items():
+        if any(snippet in lookup_value for snippet in snippet_list):
+            out_value = key
+            break
+    else:
+        out_value = 'UNKNOWN'
+    return out_value
 
 
 def get_filename_from_filepath(filepath):
@@ -289,7 +304,7 @@ def get_chase_table(filepath):
     table.add_column('Vendor', vendors)
     types = table.generate_list_from_lookup('Vendor', type_lookup)
     table.add_column('Type', types)
-    table.add_column('Account', ['Chase']*table.rows)
+    table.add_column('Account', ['Chase'] * table.rows)
     return table
 
 
@@ -329,11 +344,11 @@ def get_wells_table(filepath):
         'Credit Card Payment': ['Chase',
                                 'Amazon',
                                 'Barclays'],
-        'Cash transfer': ['Venmo',
-                          'Apple Cash',
-                          'Wells Fargo',
-                          'Etrade',
-                          'Best Buy'],
+        'Transfer': ['Venmo',
+                     'Apple Cash',
+                     'Wells Fargo',
+                     'Etrade',
+                     'Best Buy'],
         'Weed': ['Garden of Eden'],
         'Rent': ['Pramod Pai',
                  'Emily']
@@ -342,7 +357,7 @@ def get_wells_table(filepath):
     table.add_column('Vendor', vendors)
     types = table.generate_list_from_lookup('Vendor', type_lookup, exact_match=True)
     table.add_column('Type', types)
-    table.add_column('Account', [get_filename_from_filepath(filepath)]*table.rows)
+    table.add_column('Account', [get_filename_from_filepath(filepath)] * table.rows)
     return table
 
 
@@ -381,7 +396,7 @@ def get_apple_table(filepath):
     table.add_column('Vendor', vendors)
     types = table.generate_list_from_lookup('Vendor', type_lookup, exact_match=True)
     table.add_column('Type', types)
-    table.add_column('Account', ['Apple']*table.rows)
+    table.add_column('Account', ['Apple'] * table.rows)
     return table
 
 
@@ -395,38 +410,56 @@ def get_all_tables(filepath_list: List[str]) -> List[PyTable]:
     }
     tables = []
     for filepath in filepath_list:
-        filename = get_filename_from_filepath(filepath)
-        for func, filenames in filename_lookup.items():
-            if filename in filenames:
-                tables.append(func(filepath))
-                break
-        else:
-            print(f'no appropriate parsing method found for {filepath}')
+        parsing_func = check_lookup(filepath, filename_lookup)
+        if parsing_func == 'UNKNOWN':
+            print(f'No appropriate parsing method found for {filepath}')
+            continue
+        tables.append(parsing_func(filepath))
     return tables
 
 
 if __name__ == '__main__':
+    # load everything into the correct object type
     filepaths = get_csv_filepaths_from_directory(
-        'C:\\Users\\Travis\\PycharmProjects\\finance_processor_v2\\Data\\Raw\\2021'
+        '/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data'
     )
     tables = get_all_tables(filepaths)
     all_table = tables[0]
     for table in tables[1:]:
         all_table += table
 
+
+    # this chunk of code parses the date and orders it, filters it and un-parses it
     def parse_date(date_in):
         return datetime.strptime(date_in, '%m/%d/%Y')
 
+
     all_table.format_col('Date', parse_date)
     date_ind = all_table.get_index('Date')
+    all_table.sort('Date', lambda row: row[date_ind], reverse=True)
 
+
+    # this filters for august through november
     def filter_for_month(row_in):
         date: datetime = row_in[date_ind]
         year = date.year
         month = date.month
-        return year == 2021 and month == 11
+        in_november = year == 2022 and month == 11
+        in_october = year == 2022 and month == 10
+        in_september = year == 2022 and month == 9
+        return in_november or in_october or in_september
+
+
     all_table.filter_by_func(filter_for_month)
 
 
+    # this turns it back into a formatted string
+    def format_date(date_in):
+        return datetime.strftime(date_in, '%a %b %d, %Y')
 
-    all_table.print()
+
+    all_table.format_col('Date', format_date)
+
+    pivot_table = all_table.pivot('Type', 'Amount')
+    # print the results
+    pivot_table.print()
