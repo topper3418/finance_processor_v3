@@ -282,8 +282,9 @@ def get_chase_table(filepath):
                       'Mioki Sushi',
                       'Postmates',
                       'Ohanahawa',
-                      'Asia Delight'],
-        'Health/hygene': ['Walgreens',
+                      'Asia Delight',
+                      'Tesla food'],
+        'Health/Fitness': ['Walgreens',
                           'CVS',
                           'Dollar Shave Club',
                           'Kaiser',
@@ -427,15 +428,15 @@ def get_wells_table(filepath):
                      'Etrade',
                      'Best Buy',
                      'Chase',
-                     'Amazon',
                      'Barclays',
                      'Goldman Sachs'],
+        'Amazon': ['Amazon'],
         'Weed': ['Garden of Eden'],
         'Rent': ['Pramod Pai',
                  'Emily',
                  'Travis'],
         'Groceries': ['Costco'],
-        'Going out': ['Ram Areti'],
+        'Going Out': ['Ram Areti'],
         'Misc': ['Cash'],
         'Taxes': ['Taxes']
     }
@@ -494,7 +495,7 @@ def get_apple_table(filepath):
         'Ram Areti': ['ZELLE TO ARETI RAM']
     }
     type_lookup = {
-        'Health/Fitness': ['Monarch Bay Golf club',
+        'Golf': ['Monarch Bay Golf club',
                            'Mission Hills golf course'],
         'Shopping': ['Target',
                      'Safeway'],
@@ -530,7 +531,7 @@ def get_apple_table(filepath):
         'Shipping/Transportation': ['Fastrak',
                                     'BART',
                                     'Hilton'],
-        'Home Stuff': ['Hobby Lobby']
+        'Home Expense': ['Hobby Lobby']
     }
     vendors = table.generate_list_from_lookup('Memo', vendor_lookup)
     table.add_column('Vendor', vendors)
@@ -598,10 +599,13 @@ if __name__ == '__main__':
     Travis_table = get_all_transactions(data_filepath, 'Travis')
 
     all_table = Emily_table + Travis_table
+    all_table.filter('Type', 'Automotive')
 
-    with open('sept-oct transactions.csv', 'w') as file:
-        writer = csv.writer(file)
-        writer.writerow(all_table.headers)
-        writer.writerows([row for row in all_table.data])
+    #with open('sept-oct transactions.csv', 'w') as file:
+    #    writer = csv.writer(file)
+    #    writer.writerow(all_table.headers)
+    #    writer.writerows([row for row in all_table.data])
 
-    all_table.pivot('Type', 'Amount').print()
+    pivot = all_table.pivot('Vendor', 'Amount')
+    pivot.sort(lambda row: row[0])
+    pivot.print()

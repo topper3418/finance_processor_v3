@@ -143,14 +143,14 @@ class PySheet:
 class PyTable(PySheet):
     """This will be like a PySheet, except it will have headers and data and such"""
 
-    class row_format(list):
+    class RowFormat(list):
 
         def to_csv(self, delimiter) -> str:
             str_row = [str(item) for item in self]
             return delimiter.join(str_row)
 
     def __init__(self, headers, data):
-        self.data = [self.row_format(row) for row in data]
+        self.data = [self.RowFormat(row) for row in data]
         self.headers = headers
 
     def __iter__(self):
