@@ -3,21 +3,33 @@ import csv
 from typing import List, Callable
 
 
-class PySheet:
+class PyTable:
 
-    def __init__(self, filepath):
-        # make sure it is a csv file
-        if filepath[-4:] != '.csv':
-            raise Exception('filepath is not of type .csv')
-        # get all the rows from the file
-        with open(filepath, 'r') as file:
-            reader = csv.reader(file)
-            data = list(reader)
-        # make data
-        self.data: List[list] = data
+    class PyRowFormat(list):
+
+        def string_list(self):
+            return [str(item) for item in self]
+
+    row_format = PyRowFormat
+
+    def __init__(self, headers: List[str], data: List[list]):
+        self.headers = headers
+        self.data = data
 
     @property
-    def data(self) -> List[list]:
+    def headers(self) -> List[str]:
+        return self._headers
+
+    @headers.setter
+    def headers(self, value):
+        if not isinstance(value, list):
+            raise ValueError("The 'headers' attribute must be a list")
+        if not all(isinstance(header, str) for header in value):
+            raise ValueError("All headers must be strings")
+        self._headers = self.row_format(value)
+
+    @property
+    def data(self) -> list:
         return self._data
 
     @data.setter
@@ -27,13 +39,13 @@ class PySheet:
         if not all(isinstance(row, list) for row in value):
             raise ValueError("All rows in the 'data' attribute must be lists.")
         if len(set(len(row) for row in value)) > 1:
-            raise ValueError("All rows in the 'data' attribute must have the same length.")
+            raise ValueError("All rows in the 'data' attribute must have the same length as each other")
         if len(value) > 0:
-            self._data = value
+            self._data = [self.row_format(row) for row in value]
             self.rows = len(value)
             self.cols = len(value[0])
         else:
-            self._data = [[None]*self.cols]
+            self._data = self.row_format([[None]*self.cols])
             self.rows = 0
 
     @property
@@ -56,107 +68,6 @@ class PySheet:
             raise TypeError('rows must be of type int')
         self._rows = value
 
-    def print(self, num_rows: int = -1, headless: bool = True):
-        """this function prints out the data in a nice readable table"""
-        # determine the  width of each column
-        widths = [max(
-                [len(str(value)) for value in column]
-            )
-                  for column in self.get_data_as_columns()
-        ]
-        def print_blank():
-            line = '+'
-            for width in widths:
-                line += '-' * width + '--+'
-            print(line)
-
-        # define the function for printing out a full row
-        def print_line(row_in):
-            line = '|'
-            for width, item in zip(widths, row_in):
-                line += f" {str(item).rjust(width)} |"
-            print(line)
-
-        # print blank, headers, blank, data, blank
-        print_blank()
-        for ii, row in enumerate(self.data):
-            print_line(row)
-            if ii == 0 and not headless:
-                print_blank()
-            if num_rows != -1 and ii+1 >= num_rows:
-                break
-        print_blank()
-        
-    def filter(self, header, value, drop=False):
-        """returns a sheet where the column matches the value"""
-        self.data = [row for row in self.data if row[header] == value]
-        if drop: self.drop_column(header)
-
-    def sort(self, sort_func: Callable, reverse: bool = False):
-        self.data = sorted(self.data, key=sort_func, reverse=reverse)
-
-    def filter_by_func(self, filter_func: Callable):
-        self.data = [row for row in self.data if filter_func(row)]
-
-    def py_table(self, headers: List[str] = []) -> PyTable:
-        if headers: return PyTable(headers, self.data)
-        return PyTable(self.data[0], self.data[1:])
-
-    def get_column_as_list(self, col_index: int):
-        return [row[col_index] for row in self.data]
-
-    def get_data_as_columns(self) -> List[list]:
-        return [self.get_column_as_list(col_index) for col_index in range(self.cols)]
-
-    def columns_to_rows(self, columns: List[list]):
-        self.data = [list(row) for row in zip(*columns)]
-
-    def drop_column(self, index_in: int):
-        """Drops a column at a given index"""
-        # convert to a single list if necessary
-        columns = self.get_data_as_columns()
-        columns.pop(index_in)
-        self.columns_to_rows(columns)
-
-    def drop_columns(self, indices: List[int]):
-        """like drop_column, but put in a list of columns to drop"""
-        for index in indices:
-            self.drop_column(index)
-
-    def add_column(self, new_col: list):
-        self.data = [row + [item] for item, row in zip(new_col, self.data)]
-
-    def generate_list(self, generating_func: Callable) -> list:
-        """this function generates a list from the data using a generating function. This function should take in
-        a row of data and return a value from it"""
-        return [generating_func(row) for row in self.data]
-
-    def generate_column(self, generating_func: Callable) -> None:
-        """this function adds a column to the end of the sheet. The generating function should take in a row and
-        return a single value"""
-        # use the generate_list method
-        new_column = self.generate_list(generating_func)
-        # use the add_column method
-        self.add_column(new_column)
-
-
-class PyTable(PySheet):
-    """This will be like a PySheet, except it will have headers and data and such"""
-
-    class RowFormat(list):
-
-        def to_csv(self, delimiter) -> str:
-            str_row = [str(item) for item in self]
-            return delimiter.join(str_row)
-
-    def __init__(self, headers, data):
-        self.data = [self.RowFormat(row) for row in data]
-        self.headers = headers
-
-    def __iter__(self):
-        for row in self.data:
-            yield row
-
     def get_index(self, header) -> int:
         """basically this will take in a header (or an int) and return an int. if input is an int
         then it will return the int. if it is a string that is in headers, it will return the index
@@ -167,27 +78,6 @@ class PyTable(PySheet):
             return self.headers.index(header)
         else:
             raise IndexError(f'{header} is not a valid column index for this table')
-
-    def get_column_as_list(self, index_in: int | str):
-        """same as the parent classes method, except can also take a header"""
-        int_index = self.get_index(index_in)
-        return super(PyTable, self).get_column_as_list(int_index)
-
-    def drop_column(self, index_in: int | str):
-        """same as parent method, but can take a header as input"""
-        int_index = self.get_index(index_in)
-        self.headers.pop(int_index)
-        super(PyTable, self).drop_column(int_index)
-        
-    def add_column(self, new_header: str, new_col: list):
-        # new column must be same length as data
-        if len(new_col) != self.rows:
-            raise Exception('New column is not consistent with data. '
-                            f'Expected {self.rows} but got {len(new_col)=}')
-        self.headers += [new_header]
-        new_header_ind = self.get_index(new_header)
-        for row, new_value in zip(self.data, new_col):
-            row[new_header_ind] = new_value
 
     def print(self, num_rows: int = -1) -> None:
         """same as above, but will always have headers"""
@@ -219,14 +109,58 @@ class PyTable(PySheet):
             if num_rows != -1 and ii+1 >= num_rows:
                 break
         print_blank()
-
+        
     def filter(self, header, value, drop=False):
-        header_ind = self.get_index(header)
-        super(PyTable, self).filter(header_ind, value, drop)
+        """returns a sheet where the column matches the value"""
+        self.data = [row for row in self.data if row[header] == value]
+        if drop: self.drop_column(header)
 
-    def drop_columns(self, indices: List[str | int]):
+    def sort(self, sort_func: Callable, reverse: bool = False):
+        self.data = sorted(self.data, key=sort_func, reverse=reverse)
+
+    def filter_by_func(self, filter_func: Callable):
+        self.data = [row for row in self.data if filter_func(row)]
+
+    def get_column_as_list(self, col_index: int | str):
+        col_index = self.get_index(col_index)
+        return [row[col_index] for row in self.data]
+
+    def get_data_as_columns(self) -> List[list]:
+        return [self.get_column_as_list(col_index) for col_index in range(self.cols)]
+
+    def columns_to_rows(self, columns: List[list]):
+        self.data = [list(row) for row in zip(*columns)]
+
+    def drop_column(self, index_in: int | str):
+        """Drops a column at a given index"""
+        # convert to a single list if necessary
+        columns = self.get_data_as_columns()
+        index_in = self.get_index(index_in)
+        columns.pop(index_in)
+        self.columns_to_rows(columns)
+
+    def drop_columns(self, indices: List[int | str]):
+        """like drop_column, but put in a list of columns to drop"""
         for index in indices:
             self.drop_column(index)
+
+    def add_column(self, new_header, new_col: list):
+        self.headers.append(new_header)
+        self.data = [row + [item] for item, row in zip(new_col, self.data)]
+
+    def generate_list(self, generating_func: Callable) -> list:
+        """this function generates a list from the data using a generating function. This function should take in
+        a row of data and return a value from it"""
+        return [generating_func(row) for row in self.data]
+
+    def generate_column(self, new_header, generating_func: Callable) -> None:
+        """this function adds a column to the end of the sheet. The generating function should take in a row and
+        return a single value"""
+        self.headers.append(new_header)
+        # use the generate_list method
+        new_column = self.generate_list(generating_func)
+        # use the add_column method
+        self.add_column(new_column)
 
     def generate_list_from_lookup(self, header: str, lookup: dict, exact_match: bool = False):
         """This function works like generate list, but it does it with a lookup in order to
@@ -305,29 +239,31 @@ class PyTable(PySheet):
         # add the data
         return PyTable(self.headers, self.data + other.data)
 
-    @property
-    def headers(self):
-        return self._headers
+# TODO make classes for significant data types. This includes the raw format
+# marked on each 'get' function, but also for the bigger tables and pivots.
+# the raw one should include a connection some sqlite stuff.
 
-    @headers.setter
-    def headers(self, value: list):
-        if not isinstance(value, list):
-            raise TypeError('headers must be of type list')
-        if len(value) < self.cols:
-            raise Exception(f'headers are inconsistent with data. Expected {self.cols} items but got'
-                            f' {len(value)} items')
-        elif len(value) == self.cols:
-            self._headers = value
-        elif len(value) > self.cols:
-            self._headers = value
-            diff = len(value) - self.cols
-            self.data = [row + [None]*diff for row in self.data]
+
+def from_csv(filepath):
+    # make sure it is a csv file
+    if filepath[-4:] != '.csv':
+        raise Exception(f'{filepath} is not a .csv')
+    # get all the rows from the file
+    with open(filepath, 'r') as file:
+        reader = csv.reader(file)
+        data = list(reader)
+    # make data
+    return data
 
 
 def main():
-    sheet = PySheet('C:\\Users\\Travis\\PycharmProjects\\finance_processor_v2\\Data\\Raw\\2021\\Chase.csv')
-    table = sheet.py_table()
-    table.drop_columns(['Post Date', 'Category', 'Type', 'Memo'])
+    sheet = from_csv(
+        'C:\\Users\\Travis\\Documents\\GitHub\\finance_processor_v3\\'
+        'Data\\Travis\\Chase4452_Activity20220801_20221211_20221212.csv'
+    )
+    table = PyTable(sheet[0], sheet[1:])
+    table.select_columns(['Transaction Date', 'Description', 'Amount'])
+    table.headers = ['Date', 'Memo', 'Amount']
     table.print(num_rows=20)
 
 

@@ -1,4 +1,4 @@
-from PySheets import PySheet, PyTable
+from PySheets import PyTable, from_csv
 import os
 from typing import List
 from datetime import datetime
@@ -53,10 +53,11 @@ def get_filename_from_filepath(filepath):
 
 
 def get_chase_table(filepath):
-    sheet = PySheet(filepath)
-    table = sheet.py_table()
-    table.drop_columns(['Post Date', 'Category', 'Type', 'Memo'])
+    sheet = from_csv(filepath)
+    table = PyTable(sheet[0], sheet[1:])
+    table.select_columns(['Transaction Date', 'Description', 'Amount'])
     table.headers = ['Date', 'Memo', 'Amount']
+    # TODO this point here should be its own class
     # get vendor
     vendor_lookup = {
         'Target': ['target'],
@@ -383,9 +384,10 @@ def get_chase_table(filepath):
 
 
 def get_wells_table(filepath):
-    sheet = PySheet(filepath)
-    table = sheet.py_table(['Date', 'Amount', 'Stars', 'Blanks', 'Memo'])
+    sheet = from_csv(filepath)
+    table = PyTable(['Date', 'Amount', 'Stars', 'Blanks', 'Memo'], sheet)
     table.select_columns(['Date', 'Memo', 'Amount'])
+    # TODO this point here should be its own class
     vendor_lookup = {
         'Tesla Payroll': ['tesla motors, in payroll'],
         'PG&E': ['pgande web online'],
@@ -449,10 +451,11 @@ def get_wells_table(filepath):
 
 
 def get_apple_table(filepath):
-    sheet = PySheet(filepath)
-    table = sheet.py_table()
+    sheet = from_csv(filepath)
+    table = PyTable(sheet[0], sheet[1:])
     table.select_columns(['Transaction Date', 'Description', 'Amount (USD)'])
     table.headers = ['Date', 'Memo', 'Amount']
+    # TODO this point here should be its own class
     vendor_lookup = {
         'Monarch Bay Golf club': ['monarch bay golf club',
                                   'monarch bay'],
@@ -557,12 +560,13 @@ def get_all_tables(filepath_list: List[str]) -> List[PyTable]:
             print(f'No appropriate parsing method found for {filepath}')
             continue
         tables.append(parsing_func(filepath))
+        # TODO this should be its own class too
     return tables
 
 
 def get_all_transactions(data_filepath: str, person: str):
     # load everything into the correct object type
-    filepaths = get_csv_filepaths_from_directory(f'{data_filepath}/{person}')
+    filepaths = get_csv_filepaths_from_directory(f'{data_filepath}\\{person}')
     tables = get_all_tables(filepaths)
     all_table = tables[0]
     for table in tables[1:]:
@@ -594,18 +598,17 @@ def get_all_transactions(data_filepath: str, person: str):
 
 
 if __name__ == '__main__':
-    data_filepath = '/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data'
+    data_filepath = 'C:\\Users\\Travis\\Documents\\GitHub\\finance_processor_v3\\Data'
     Emily_table = get_all_transactions(data_filepath, 'Emily')
     Travis_table = get_all_transactions(data_filepath, 'Travis')
 
     all_table = Emily_table + Travis_table
-    all_table.filter('Type', 'Automotive')
 
     #with open('sept-oct transactions.csv', 'w') as file:
     #    writer = csv.writer(file)
     #    writer.writerow(all_table.headers)
     #    writer.writerows([row for row in all_table.data])
 
-    pivot = all_table.pivot('Vendor', 'Amount')
+    pivot = all_table.pivot('Type', 'Amount')
     pivot.sort(lambda row: row[0])
     pivot.print()
