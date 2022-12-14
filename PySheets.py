@@ -92,7 +92,7 @@ class PySheet:
         self.data = [row for row in self.data if row[header] == value]
         if drop: self.drop_column(header)
 
-    def sort(self, header: str, sort_func: Callable, reverse: bool = False):
+    def sort(self, sort_func: Callable, reverse: bool = False):
         self.data = sorted(self.data, key=sort_func, reverse=reverse)
 
     def filter_by_func(self, filter_func: Callable):
@@ -143,9 +143,19 @@ class PySheet:
 class PyTable(PySheet):
     """This will be like a PySheet, except it will have headers and data and such"""
 
+    class row_format(list):
+
+        def to_csv(self, delimiter) -> str:
+            str_row = [str(item) for item in self]
+            return delimiter.join(str_row)
+
     def __init__(self, headers, data):
-        self.data = data
+        self.data = [self.row_format(row) for row in data]
         self.headers = headers
+
+    def __iter__(self):
+        for row in self.data:
+            yield row
 
     def get_index(self, header) -> int:
         """basically this will take in a header (or an int) and return an int. if input is an int
@@ -274,7 +284,9 @@ class PyTable(PySheet):
             categories_dict[category] += float(value)
         # create the table
         pivot_data = [[category, round(value, 2)] for category, value in categories_dict.items()]
-        return PyTable([pivot_header, value_header], pivot_data)
+        pivot_table = PyTable([pivot_header, value_header], pivot_data)
+        pivot_table.sort(lambda row: row[1], reverse=True)
+        return pivot_table
 
     def format_col(self, header, format_func):
         """runs the format func on every item in the given column"""

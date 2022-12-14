@@ -2,9 +2,10 @@ from PySheets import PySheet, PyTable
 import os
 from typing import List
 from datetime import datetime
+import csv
 
 
-def get_csv_filepaths_from_directory(directory_path):
+def get_csv_filepaths_from_directory(directory_path: str) -> List[str]:
     # Create an empty list to store the filepaths
     csv_filepaths = []
 
@@ -70,9 +71,9 @@ def get_chase_table(filepath):
         'Waste Management': ['waste mgmt'],
         'Designer Shoe Warehouse': ['dsw dublin retail'],
         'Parking Sacramento': ['ABMONSITEGOLDEN1CENTER'],
-        'Transfer from WF': ['payment thank you-mobile',
-                             'payment thank you - web',
-                             'automatic payment - thank'],
+        'Wells Fargo': ['payment thank you-mobile',
+                        'payment thank you - web',
+                        'automatic payment - thank'],
         'Chick-fil-a': ['chick-fil-a'],
         'Tesla food': ['365 market'],
         'BevMo': ['BEVERAGES &amp; MORE'],
@@ -89,7 +90,8 @@ def get_chase_table(filepath):
         'In N Out': ['in n out burger'],
         '7-11': ['7-eleven'],
         'Party time liquor': ['party time liquor'],
-        'CVS': ['cvs/pharmacy'],
+        'CVS': ['cvs/pharmacy',
+                'www.cvs.com'],
         'Carls Jr': ['carls jr'],
         'Yoshi food truck': ['sq *yoshi'],
         'Grillzillas': ['sq *grillzillas'],
@@ -100,7 +102,7 @@ def get_chase_table(filepath):
         'Mens Wearhouse': ['mens wearhouse'],
         'Speedy Panini food truck': ['sq *speedy panini'],
         'Azazie': ['Azazie inc'],
-        'Safeway': ['safeway #'],
+        'Safeway': ['safeway'],
         'Jamba juice': ['tst* jamba juice',
                         'jamba juice',
                         'jambajuic'],
@@ -112,7 +114,8 @@ def get_chase_table(filepath):
         'Playstation': ['playstation network'],
         "Dominoes": ["domino's"],
         'Fogo de Chao': ['fogo de chao',
-                         'tsp*fogodechao'],
+                         'tsp*fogodechao',
+                         'par*fogo san jose'],
         'Unknown parking meter': ['parkingmeter4'],
         'Poke Don': ['poke don hayward'],
         "Lou Malnati's": ['lou malnatis - michigan'],
@@ -156,7 +159,8 @@ def get_chase_table(filepath):
         'New Earth Market': ['new earth market'],
         'La Fondita': ['sq *la fondita kitchen'],
         'Rich & Sals Sport Shop': ['RICH &amp; SALS SPORT SHOP'],
-        'Coldstone': ['coldstone creamy'],
+        'Coldstone': ['coldstone creamy',
+                      'doordash coldstone'],
         'Iron Door Saloon': ['iron door saloon'],
         'Pilot': ['pilot_',
                   'pilot    '],
@@ -165,7 +169,8 @@ def get_chase_table(filepath):
         'Smart & Final': ['smart and final'],
         'Chevron': ['chevron '],
         'Banana Leaf inc': ['banana leaf inc'],
-        'Apple': ['apple store  '],
+        'Apple': ['apple store  ',
+                  'apple.com'],
         'Joe the Juice': ['joe  the juice new york'],
         'Limitless Axes': ['tst* limitless axes',
                            'LIMITLESSAXES.COM'],
@@ -183,14 +188,55 @@ def get_chase_table(filepath):
         'Gentle Care': ['gentle care veterinary'],
         'TurboTax': ['intuit *turbotax'],
         'Almanac Beer': ['sq *almanac beer'],
-        'Encinel Nursery': ['encinal nursery']
+        'Encinel Nursery': ['encinal nursery'],
+        'Daisys': ['daisys'],
+        'PetCo': ['petco'],
+        'Ross': ['ross'],
+        'Alameda Parking': ['alameda parking garage'],
+        'Starbucks': ['starbucks store'],
+        'Home Skillet': ['sq *homeskillet'],
+        'TJ Max': ['TJ Max'],
+        'Dollar Tree': ['dollar tree'],
+        'Taco Bell': ['tacobell'],
+        'Macys': ['Macys'],
+        'Garden Of Eden': ['gardenofEden'],
+        'Sock Harbor': ['sock harbor'],
+        'Box Lunch': ['box lunch'],
+        'Famous Daves': ['famousdav'],
+        "Trader Joe's": ['trader joe'],
+        'Hunan Restaurant': ['hunanrest'],
+        'Habit Burger': ['habit castro'],
+        'Bart': ['bart-clipper'],
+        'Door Dash': ['doordash dashpass'],
+        'Safeway Beer': ['safeway beer'],
+        'Stanford Health': ['med*stanford'],
+        'Healthy Paws': ['healthy paws'],
+        'Chef Teriyaki': ['chefteriy'],
+        'High Flying Foods': ['high flying foods'],
+        'Southwest': ['southwes  '],
+        'Panera Bread': ['panerabre'],
+        'Verve Coffee Roasters': ['sq *verve coffee'],
+        'Chipotle': ['chipotle'],
+        'Medic Alert': ['medic alert'],
+        'Vintage Wine Bar': ['tst* vintage wine'],
+        'Hong Kong Cafe': ['*hong kong caf'],
+        "Shari's Cafe": ['shariscaf'],
+        'Uber': ['Uber'],
+        'Joy Sushi': ['joysushi'],
+        'Mioki Sushi': ['miokisush'],
+        'Hobby Lobby': ['hobby-lobby'],
+        'Postmates': ['postmates'],
+        'Ohanahawa': ['ohanahawa'],
+        "Denica's": ['denicas'],
+        'Asia Delight': ['asiadelig']
     }
     type_lookup = {
         'Groceries': ['Target',
                       'Safeway',
                       'Costco',
                       'Seafood City Supermarket',
-                      'Smart & Final'],
+                      'Smart & Final'
+                      "Trader Joe's"],
         'Automotive': ['Tesla',
                        "O'Reilly",
                        "Jimmy's",
@@ -220,7 +266,23 @@ def get_chase_table(filepath):
                       'Sunrise Deli',
                       'Saigon Street Food',
                       'New Earth Market',
-                      'La Fondita'],
+                      'La Fondita',
+                      'Famous Daves',
+                      "Trader Joe's",
+                      'Hunan Restaurant',
+                      'Habit Burger',
+                      'Door Dash',
+                      'High Flying Foods',
+                      'Panera Bread',
+                      'Chef Teriyaki',
+                      'Chipotle',
+                      'Hong Kong Cafe',
+                      "Shari's Cafe",
+                      'Joy Sushi',
+                      'Mioki Sushi',
+                      'Postmates',
+                      'Ohanahawa',
+                      'Asia Delight'],
         'Health/hygene': ['Walgreens',
                           'CVS',
                           'Dollar Shave Club',
@@ -229,7 +291,9 @@ def get_chase_table(filepath):
                           'Wellbrook Chiropractor',
                           'Sport Clips',
                           'Emotion Beauty Salon',
-                          'Smile Direct Club'],
+                          'Smile Direct Club',
+                          'Stanford Health',
+                          'Medic Alert'],
         'Shopping': ['Etsy',
                      'Designer Shoe Warehouse',
                      'Spencers',
@@ -242,11 +306,15 @@ def get_chase_table(filepath):
                                     "Robert's Parking",
                                     'Unknown parking meter',
                                     'Fastrak',
-                                    'Enterprise'],
+                                    'Enterprise',
+                                    'Bart',
+                                    'Southwest',
+                                    'Uber'],
         'Utilities': ['Comcast',
                       'Waste Management',
                       'Hayward Water'],
-        'Transfer': ['Transfer from WF'],
+        'Transfer': ['Transfer from WF',
+                     'Wells Fargo'],
         'Alcohol': ['BevMo',
                     'Party time liquor'],
         'Fitness': ['Mission Peak sports store',
@@ -289,16 +357,21 @@ def get_chase_table(filepath):
                       'Joe the Juice',
                       'GoGo Sushi',
                       'Kokoro Ramen',
-                      'Almanac Beer'],
+                      'Almanac Beer',
+                      'Verve Coffee Roasters',
+                      'Vintage Wine Bar',
+                      "Denica's"],
         'Maisie': ['Bark Box',
-                   'Gentle Care'],
+                   'Gentle Care',
+                   'Healthy Paws'],
         'Home Expense': ['Home Depot',
                          'Lowes',
                          "Nature's Good Guys",
-                         'Encinel Nursery'],
+                         'Encinel Nursery',
+                         'Hobby Lobby'],
         'Interest/Fees': ['Chase (interest)',
                           'Chase (fee)'],
-        'Tax': ['TurboTax']
+        'Taxes': ['TurboTax']
     }
     vendors = table.generate_list_from_lookup('Memo', vendor_lookup)
     table.add_column('Vendor', vendors)
@@ -334,24 +407,37 @@ def get_wells_table(filepath):
         'Best Buy': ['best buy auto pymt'],
         'Pramod Pai': ['bill pay pramod pai'],
         'Emily': ['cagigas emily'],
+        'Travis': ['transfer to opperud travis'],
         'Verizon': ['verizon wireless payments'],
-        'Garden of Eden': ['garden of eden hayward']
+        'Garden of Eden': ['garden of eden hayward',
+                           'gardenofedenhw'],
+        'Goldman Sachs': ['applecard gsbank payment'],
+        'Costco': ['costco whse #'],
+        'Ram Areti': ['zelle to areti ram'],
+        'Cash': ['Mobile Deposit'],
+        'Taxes': ['FTB MCT REFUND']
     }
     type_lookup = {
         'Income': ['Tesla Payroll'],
         'Utilities': ['PG&E',
                       'Verizon'],
-        'Credit Card Payment': ['Chase',
-                                'Amazon',
-                                'Barclays'],
         'Transfer': ['Venmo',
                      'Apple Cash',
                      'Wells Fargo',
                      'Etrade',
-                     'Best Buy'],
+                     'Best Buy',
+                     'Chase',
+                     'Amazon',
+                     'Barclays',
+                     'Goldman Sachs'],
         'Weed': ['Garden of Eden'],
         'Rent': ['Pramod Pai',
-                 'Emily']
+                 'Emily',
+                 'Travis'],
+        'Groceries': ['Costco'],
+        'Going out': ['Ram Areti'],
+        'Misc': ['Cash'],
+        'Taxes': ['Taxes']
     }
     vendors = table.generate_list_from_lookup('Memo', vendor_lookup)
     table.add_column('Vendor', vendors)
@@ -367,7 +453,8 @@ def get_apple_table(filepath):
     table.select_columns(['Transaction Date', 'Description', 'Amount (USD)'])
     table.headers = ['Date', 'Memo', 'Amount']
     vendor_lookup = {
-        'Monarch Bay Golf club': ['monarch bay golf club'],
+        'Monarch Bay Golf club': ['monarch bay golf club',
+                                  'monarch bay'],
         'Target': ['Target'],
         'Safeway': ['Safeway'],
         'Clubhouse': ['tst* mission peak spor'],
@@ -377,26 +464,80 @@ def get_apple_table(filepath):
         'Comcast': ['comcast california'],
         'Two Pitchers brewing': ['pp*two pitchers brewi'],
         'Oakland': ['oakland park meter ips'],
-        'Steam': ['steam purchase']
+        'Steam': ['steam purchase'],
+        '7-11': ['7-eleven'],
+        'Fastrak': ['fastrak'],
+        'Dish N Dash': ['dish n dash'],
+        'Back Bay Bistro': ['back bay bistro'],
+        'BART': ['Bart'],
+        'Waste Management': ['waste mgmt'],
+        'Pho Tai': ['pho tai'],
+        'Hilton': ['hilton'],
+        'Oakland airport': ['oakland international air'],
+        'Mission Hills golf course': ['mission hills golf',
+                                      'mission hills caf'],
+        'Grillzillas': ['grillzillas kato'],
+        'JBA Investment group': ['jba investment group'],
+        'T-MO': ['sq *t-mo'],
+        'Canteen Vending': ['usa*canteen vending'],
+        'Generic Food Trucks': ['sq *food trucks fremont'],
+        'Anaheim airport': ['h2c anaheim ducks sna'],
+        'Speedy Panini': ['sq *speedy panini'],
+        'Sweet Maple': ['tst* sweet maple'],
+        'Hobby Lobby': ['hobby-lobby'],
+        'Panda Express': ['panda express'],
+        'Tesla Barista': ['sq *Tesla barista bar'],
+        'MC Sushi': ['sq *mc sushi'],
+        'Pinecrest lake resort': ['pinecrest lake resort'],
+        'Akita Sushi': ['sq *akita sushi'],
+        'Jamba Juice': ['tst* jamba juice'],
+        'Ram Areti': ['ZELLE TO ARETI RAM']
     }
     type_lookup = {
-        'Health/Fitness': ['Monarch Bay Golf club'],
+        'Health/Fitness': ['Monarch Bay Golf club',
+                           'Mission Hills golf course'],
         'Shopping': ['Target',
                      'Safeway'],
-        'Fast Food': ['Yo-Kai Express'],
+        'Fast Food': ['Yo-Kai Express',
+                      'Grillzillas',
+                      'JBA Investment group',
+                      'T-MO',
+                      'Canteen Vending',
+                      'Generic Food Trucks',
+                      'Speedy Panini',
+                      'Panda Express',
+                      'MC Sushi',
+                      'Akita Sushi'],
         'Going Out': ['Clubhouse',
-                      'Two Pitchers brewing'],
-        'Cash Transfer': ['Wells Fargo'],
-        'Junk Food': ['Work kiosk'],
-        'Utilities': ['Comcast'],
+                      'Two Pitchers brewing',
+                      'Dish N Dash',
+                      'Back Bay Bistro',
+                      'Pho Tai',
+                      'Oakland airport',
+                      'Anaheim airport',
+                      'Sweet Maple',
+                      'Pinecrest lake resort',
+                      'Ram Areti'],
+        'Transfer': ['Wells Fargo'],
+        'Junk Food': ['Work kiosk',
+                      '7-11',
+                      'Tesla Barista',
+                      'Jamba Juice'],
+        'Utilities': ['Comcast',
+                      'Waste Management'],
         'Taxes/fees': ['Oakland'],
-        'Entertainment': ['Steam']
+        'Entertainment': ['Steam'],
+        'Shipping/Transportation': ['Fastrak',
+                                    'BART',
+                                    'Hilton'],
+        'Home Stuff': ['Hobby Lobby']
     }
     vendors = table.generate_list_from_lookup('Memo', vendor_lookup)
     table.add_column('Vendor', vendors)
     types = table.generate_list_from_lookup('Vendor', type_lookup, exact_match=True)
     table.add_column('Type', types)
     table.add_column('Account', ['Apple'] * table.rows)
+    table.format_col('Amount', lambda value: -float(value))
     return table
 
 
@@ -418,48 +559,49 @@ def get_all_tables(filepath_list: List[str]) -> List[PyTable]:
     return tables
 
 
-if __name__ == '__main__':
+def get_all_transactions(data_filepath: str, person: str):
     # load everything into the correct object type
-    filepaths = get_csv_filepaths_from_directory(
-        '/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data'
-    )
+    filepaths = get_csv_filepaths_from_directory(f'{data_filepath}/{person}')
     tables = get_all_tables(filepaths)
     all_table = tables[0]
     for table in tables[1:]:
         all_table += table
 
+    all_table.add_column('Person', [person]*all_table.rows)
 
     # this chunk of code parses the date and orders it, filters it and un-parses it
     def parse_date(date_in):
         return datetime.strptime(date_in, '%m/%d/%Y')
-
-
     all_table.format_col('Date', parse_date)
     date_ind = all_table.get_index('Date')
-    all_table.sort('Date', lambda row: row[date_ind], reverse=True)
-
-
+    all_table.sort(lambda row: row[date_ind], reverse=True)
     # this filters for august through november
     def filter_for_month(row_in):
         date: datetime = row_in[date_ind]
         year = date.year
         month = date.month
-        in_november = year == 2022 and month == 11
+        # in_november = year == 2022 and month == 11
         in_october = year == 2022 and month == 10
         in_september = year == 2022 and month == 9
-        return in_november or in_october or in_september
-
-
+        return in_october or in_september
     all_table.filter_by_func(filter_for_month)
-
-
     # this turns it back into a formatted string
     def format_date(date_in):
         return datetime.strftime(date_in, '%a %b %d, %Y')
-
-
     all_table.format_col('Date', format_date)
+    return all_table
 
-    pivot_table = all_table.pivot('Type', 'Amount')
-    # print the results
-    pivot_table.print()
+
+if __name__ == '__main__':
+    data_filepath = '/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data'
+    Emily_table = get_all_transactions(data_filepath, 'Emily')
+    Travis_table = get_all_transactions(data_filepath, 'Travis')
+
+    all_table = Emily_table + Travis_table
+
+    with open('sept-oct transactions.csv', 'w') as file:
+        writer = csv.writer(file)
+        writer.writerow(all_table.headers)
+        writer.writerows([row for row in all_table.data])
+
+    all_table.pivot('Type', 'Amount').print()
