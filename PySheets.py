@@ -1,23 +1,55 @@
 from __future__ import annotations
 import csv
-from typing import List, Callable
+from typing import List, Callable, Iterable
 
 
 class PyTable:
+    """Template for working with and manipulating tables. the row formatting allows
+    for memory-light accessing of values via the headers. it includes a make_row()
+    method that links the data to the headers."""
 
-    class PyRowFormat(list):
+    # row formatting
+    class PyRow(list):
+
+        def __init__(self, row: Iterable, parent: PyTable):
+            self.rows = 0
+            self.cols = 0
+            super().__init__(row)
+            self.parent = parent
+
+        def __getitem__(self, item):
+            if isinstance(item, str) and item in self.parent.headers:
+                item_index = self.parent.headers.index(item)
+                return super().__getitem__(item_index)
+            return super().__getitem__(item)
+
+        def __setitem__(self, key, value):
+            if isinstance(key, str) and key in self.parent.headers:
+                key_ind = self.parent.headers.index(key)
+                return super().__setitem__(key_ind, value)
+            return super().__setitem__(key, value)
 
         def string_list(self):
             return [str(item) for item in self]
 
-    row_format = PyRowFormat
+        def print_format(self, widths, sep: str = ' ') -> str:
+            string = '|'+sep
+            for item, width in zip(self, widths):
+                string += f'{str(item).rjust(width, sep)}{sep}|'
+            return string
 
+    row_format = PyRow
+
+    def make_row(self, row):
+        return self.row_format(row, self)
+
+    # the rest of the class
     def __init__(self, headers: List[str], data: List[list]):
         self.headers = headers
         self.data = data
 
     @property
-    def headers(self) -> List[str]:
+    def headers(self) -> row_format:
         return self._headers
 
     @headers.setter
@@ -26,22 +58,22 @@ class PyTable:
             raise ValueError("The 'headers' attribute must be a list")
         if not all(isinstance(header, str) for header in value):
             raise ValueError("All headers must be strings")
-        self._headers = self.row_format(value)
+        self._headers = self.make_row(value)
 
     @property
-    def data(self) -> list:
+    def data(self) -> List[row_format]:
         return self._data
 
     @data.setter
     def data(self, value):
         if not isinstance(value, list):
             raise ValueError("The 'data' attribute must be a list.")
-        if not all(isinstance(row, list) for row in value):
-            raise ValueError("All rows in the 'data' attribute must be lists.")
+        if not all(isinstance(row, Iterable) for row in value):
+            raise ValueError(f"All rows in the 'data' attribute must be Iterable.")
         if len(set(len(row) for row in value)) > 1:
             raise ValueError("All rows in the 'data' attribute must have the same length as each other")
         if len(value) > 0:
-            self._data = [self.row_format(row) for row in value]
+            self._data = [self.make_row(row) for row in value]
             self.rows = len(value)
             self.cols = len(value[0])
         else:
@@ -53,9 +85,7 @@ class PyTable:
         return self._cols
 
     @cols.setter
-    def cols(self, value):
-        if not isinstance(value, int):
-            raise TypeError('cols must be of type int')
+    def cols(self, value: int):
         self._cols = value
 
     @property
@@ -63,9 +93,7 @@ class PyTable:
         return self._rows
 
     @rows.setter
-    def rows(self, value):
-        if not isinstance(value, int):
-            raise TypeError('rows must be of type int')
+    def rows(self, value: int):
         self._rows = value
 
     def get_index(self, header) -> int:
@@ -84,31 +112,20 @@ class PyTable:
         # determine the  width of each column
         widths = []
         for header, column in zip(self.headers, self.get_data_as_columns()):
-            width = max([len(str(header))] +[len(str(value)) for value in column])
+            width = max([len(str(header))] + [len(str(value)) for value in column])
             widths.append(width)
 
-        def print_blank():
-            line = '+'
-            for width in widths:
-                line += '-' * width + '--+'
-            print(line)
-
-        # define the function for printing out a full row
-        def print_line(row_in):
-            line = '|'
-            for width, item in zip(widths, row_in):
-                line += f" {str(item).rjust(width)} |"
-            print(line)
+        blank: str = self.make_row(['']*self.cols).print_format(widths, sep='-')
 
         # print blank, headers, blank, data, blank
-        print_blank()
-        print_line(self.headers)
-        print_blank()
+        print(blank)
+        print(self.headers.print_format(widths))
+        print(blank)
         for ii, row in enumerate(self.data):
-            print_line(row)
+            print(row.print_format(widths))
             if num_rows != -1 and ii+1 >= num_rows:
                 break
-        print_blank()
+        print(blank)
         
     def filter(self, header, value, drop=False):
         """returns a sheet where the column matches the value"""
@@ -122,14 +139,13 @@ class PyTable:
         self.data = [row for row in self.data if filter_func(row)]
 
     def get_column_as_list(self, col_index: int | str):
-        col_index = self.get_index(col_index)
         return [row[col_index] for row in self.data]
 
     def get_data_as_columns(self) -> List[list]:
         return [self.get_column_as_list(col_index) for col_index in range(self.cols)]
 
     def columns_to_rows(self, columns: List[list]):
-        self.data = [list(row) for row in zip(*columns)]
+        self.data = [self.row_format(row) for row in zip(*columns)]
 
     def drop_column(self, index_in: int | str):
         """Drops a column at a given index"""
@@ -166,17 +182,16 @@ class PyTable:
         """This function works like generate list, but it does it with a lookup in order to
         generate that list."""
         # get header index
-        header_ind = self.get_index(header)
         # run the function
         list_out = []
         for row in self.data:
             for category, excerpts in lookup.items():
                 if not exact_match and \
-                        any(excerpt.upper() in row[header_ind].upper() for excerpt in excerpts):
+                        any(excerpt.upper() in row[header].upper() for excerpt in excerpts):
                     list_out.append(category)
                     break
                 elif exact_match and \
-                        any(excerpt == row[header_ind] for excerpt in excerpts):
+                        any(excerpt == row[header] for excerpt in excerpts):
                     list_out.append(category)
                     break
             else:
@@ -209,12 +224,10 @@ class PyTable:
         # get unique values for the header
         categories = set(self.get_column_as_list(pivot_header))
         categories_dict = {category: 0 for category in categories}
-        pivot_ind = self.get_index(pivot_header)
-        value_ind = self.get_index(value_header)
         # loop through the list and get the sums
         for row in self.data:
-            category = row[pivot_ind]
-            value = row[value_ind]
+            category = row[pivot_header]
+            value = row[value_header]
             categories_dict[category] += float(value)
         # create the table
         pivot_data = [[category, round(value, 2)] for category, value in categories_dict.items()]
@@ -224,9 +237,8 @@ class PyTable:
 
     def format_col(self, header, format_func):
         """runs the format func on every item in the given column"""
-        header_ind = self.get_index(header)
         for row in self.data:
-            row[header_ind] = format_func(row[header_ind])
+            row[header] = format_func(row[header])
 
     def __add__(self, other: PyTable) -> PyTable:
         """returns a table with the second appended to the first"""
@@ -244,7 +256,7 @@ class PyTable:
 # the raw one should include a connection some sqlite stuff.
 
 
-def from_csv(filepath):
+def from_csv(filepath) -> List[list]:
     # make sure it is a csv file
     if filepath[-4:] != '.csv':
         raise Exception(f'{filepath} is not a .csv')
@@ -257,9 +269,8 @@ def from_csv(filepath):
 
 
 def main():
-    sheet = from_csv(
-        'C:\\Users\\Travis\\Documents\\GitHub\\finance_processor_v3\\'
-        'Data\\Travis\\Chase4452_Activity20220801_20221211_20221212.csv'
+    sheet = from_csv('/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data/'
+                     'Emily/Chase6251_Activity20220801_20221212_20221212.csv'
     )
     table = PyTable(sheet[0], sheet[1:])
     table.select_columns(['Transaction Date', 'Description', 'Amount'])

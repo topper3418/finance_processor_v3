@@ -566,7 +566,7 @@ def get_all_tables(filepath_list: List[str]) -> List[PyTable]:
 
 def get_all_transactions(data_filepath: str, person: str):
     # load everything into the correct object type
-    filepaths = get_csv_filepaths_from_directory(f'{data_filepath}\\{person}')
+    filepaths = get_csv_filepaths_from_directory(f'{data_filepath}/{person}')
     tables = get_all_tables(filepaths)
     all_table = tables[0]
     for table in tables[1:]:
@@ -578,11 +578,10 @@ def get_all_transactions(data_filepath: str, person: str):
     def parse_date(date_in):
         return datetime.strptime(date_in, '%m/%d/%Y')
     all_table.format_col('Date', parse_date)
-    date_ind = all_table.get_index('Date')
-    all_table.sort(lambda row: row[date_ind], reverse=True)
+    all_table.sort(lambda row: row['Date'], reverse=True)
     # this filters for august through november
     def filter_for_month(row_in):
-        date: datetime = row_in[date_ind]
+        date: datetime = row_in['Date']
         year = date.year
         month = date.month
         # in_november = year == 2022 and month == 11
@@ -598,7 +597,8 @@ def get_all_transactions(data_filepath: str, person: str):
 
 
 if __name__ == '__main__':
-    data_filepath = 'C:\\Users\\Travis\\Documents\\GitHub\\finance_processor_v3\\Data'
+    #data_filepath = 'C:\\Users\\Travis\\Documents\\GitHub\\finance_processor_v3\\Data'
+    data_filepath = '/Users/travisopperud/Documents/GitHub/finance_processor_v3/Data'
     Emily_table = get_all_transactions(data_filepath, 'Emily')
     Travis_table = get_all_transactions(data_filepath, 'Travis')
 
