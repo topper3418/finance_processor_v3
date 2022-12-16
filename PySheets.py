@@ -10,6 +10,13 @@ class PyTable:
         def string_list(self):
             return [str(item) for item in self]
 
+        def __eq__(self, other):
+            if type(other) != type(self):
+                raise TypeError(f'Expected {type(self)}, got {type(other)}')
+            return all([self_item == other_item
+                        for self_item, other_item
+                        in zip(self, other)])
+
     row_format = PyRowFormat
 
     def __init__(self, headers: List[str], data: List[list]):
@@ -29,7 +36,7 @@ class PyTable:
         self._headers = self.row_format(value)
 
     @property
-    def data(self) -> list:
+    def data(self) -> List[row_format]:
         return self._data
 
     @data.setter
@@ -42,31 +49,20 @@ class PyTable:
             raise ValueError("All rows in the 'data' attribute must have the same length as each other")
         if len(value) > 0:
             self._data = [self.row_format(row) for row in value]
-            self.rows = len(value)
-            self.cols = len(value[0])
         else:
             self._data = self.row_format([[None]*self.cols])
-            self.rows = 0
 
     @property
-    def cols(self):
-        return self._cols
-
-    @cols.setter
-    def cols(self, value):
-        if not isinstance(value, int):
-            raise TypeError('cols must be of type int')
-        self._cols = value
+    def cols(self) -> int:
+        return len(self.headers)
 
     @property
     def rows(self):
-        return self._rows
+        return len(self.data) if self.has_data else 0
 
-    @rows.setter
-    def rows(self, value):
-        if not isinstance(value, int):
-            raise TypeError('rows must be of type int')
-        self._rows = value
+    @property
+    def has_data(self):
+        return len(self.data) > 1 or self[0] != self.row_format([None]*self.cols)
 
     def get_index(self, header) -> int:
         """basically this will take in a header (or an int) and return an int. if input is an int
@@ -144,9 +140,11 @@ class PyTable:
         for index in indices:
             self.drop_column(index)
 
-    def add_column(self, new_header, new_col: list):
+    def add_column(self, new_header, new_col):
         self.headers.append(new_header)
-        self.data = [row + [item] for item, row in zip(new_col, self.data)]
+        if isinstance(new_col, list):
+            self.data = [row + [item] for item, row in zip(new_col, self.data)]
+        self.data = [row + [new_col] for row in self]
 
     def generate_list(self, generating_func: Callable) -> list:
         """this function generates a list from the data using a generating function. This function should take in
@@ -228,6 +226,10 @@ class PyTable:
         for row in self.data:
             row[header_ind] = format_func(row[header_ind])
 
+    def to_PyTable(self):
+        """meant for subclasses, a way to turn them back to general tables"""
+        return PyTable(self.headers, self.data)
+
     def __add__(self, other: PyTable) -> PyTable:
         """returns a table with the second appended to the first"""
         # make sure the other table is in fact a PyTable
@@ -236,12 +238,47 @@ class PyTable:
         # make sure headers are consistent. Only requirement is first headers are all present in second
         if not all(header in self.headers for header in other.headers):
             raise Exception("Not all of second table's headers are in the first table's headers")
+        if not all(header == other_header for header, other_header in zip(self.headers, other.headers)):
+            other.select_columns(self.headers)
         # add the data
         return PyTable(self.headers, self.data + other.data)
+
+    def __iadd__(self, other):
+        """appends the other table's data to self.data"""
+        # make sure the other table is in fact a PyTable
+        if not isinstance(other, PyTable):
+            raise TypeError(f'Second type is not a pyTable. it is a {type(other)}')
+        # make sure headers are consistent. Only requirement is first headers are all present in second
+        if not all(header in self.headers for header in other.headers):
+            raise Exception("Not all of second table's headers are in the first table's headers")
+        if not all(header == other_header for header, other_header in zip(self.headers, other.headers)):
+            other.select_columns(self.headers)
+        self.data.extend(other.data)
+        return self
+
+    def __iter__(self):
+        for row in self.data:
+            yield row
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+    def __repr__(self):
+        return f"{type(self)} with {self.rows} rows and {self.cols} columns"
 
 # TODO make classes for significant data types. This includes the raw format
 # marked on each 'get' function, but also for the bigger tables and pivots.
 # the raw one should include a connection some sqlite stuff.
+
+
+class StrippedCsv(PyTable):
+
+    headers = ['Date', 'Memo', 'Amount', 'Source_file', 'Person']
+
+    def __init__(self, data: List[list] = None):
+        if data is None:
+            data = [self.row_format([None]*self.cols)]
+        self.data = data
 
 
 def from_csv(filepath):

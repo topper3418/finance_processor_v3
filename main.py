@@ -2,6 +2,7 @@ from PySheets import PyTable, from_csv
 import os
 from typing import List
 from datetime import datetime
+from typing import Callable
 import csv
 
 
@@ -30,14 +31,18 @@ def get_csv_filepaths_from_directory(directory_path: str) -> List[str]:
     return csv_filepaths
 
 
-def check_lookup(lookup_value, lookup_dict):
-    """takes in a thing to check and a lookup. if any of the matching values are in the lookup, it returns the key"""
+def check_lookup(lookup_value, lookup_dict, missing_function: Callable = lambda a: 'UNKNOWN'):
+    """takes in a thing to check and a lookup.
+
+    -if any of the matching values are in the lookup, it returns the key.
+    -if none are matching, it returns the string 'UNKNOWN' by default.
+    -in order to add flexibility, there is an optional callable argument, the results of which will be returned. """
     for key, snippet_list in lookup_dict.items():
         if any(snippet in lookup_value for snippet in snippet_list):
             out_value = key
             break
     else:
-        out_value = 'UNKNOWN'
+        out_value = missing_function(lookup_value)
     return out_value
 
 
