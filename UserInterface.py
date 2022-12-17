@@ -1,6 +1,8 @@
 import os
 from typing import Dict, List
-from PySheets import from_csv, StrippedCsv, PyTable
+from PySheets import from_csv, StrippedCsv, PyTable, HeadlessData
+from sqlite_utilities import check_tables
+import sqlite3
 
 from main import check_lookup
 
@@ -103,12 +105,37 @@ def main():
     print('\n\n\n\n\n')
     all_table.print(125)
     # now for sqlite implementation
+    database = 'finance.db'
+    try:
+        conn = sqlite3.connect(database)
+        print('Checking tables in database')
+        check_tables(conn)
+        c = conn.cursor()
+        c.execute("PRAGMA table_info('vendors')")
+        table_info = HeadlessData(c.fetchall())
+        print('\tvendors info')
+        table_info.print(indents=1)
+    except sqlite3.Error as error:
+        print('Failed to check tables', error)
+
+    finally:
+        if conn:
+            # using close() method, we will close
+            # the connection
+            conn.close()
+
+            # After closing connection object, we
+            # will print "the sqlite connection is
+            # closed"
+            print("the sqlite connection is closed")
     # do a first pass, trying to match vendors and types based on memos from DB
+    # loop through the table
+    # look through all recorded snippets to populate suggested vendor and type
     # find first (chronological) unknown type or vendor
-    # prompt user to copy "snippet" to identify vendor
-    # look vendor up in vendor database [vendor key, vendor id, typical type]
-    ##  if new vendor, ask for type (repeat lookup process), add new vendor
-    ##  if existing vendor, suggest the most common type, allow for override
+    # can also access a PK-correlated list of exceptions
+    # prompt user to copy "snippet" to identify
+    # show all items in dataset this applis to
+    # look vendor up in vendor database [vendor key, vendor id, typical type
     # add those values to the table
 
 

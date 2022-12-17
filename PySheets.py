@@ -1,6 +1,6 @@
 from __future__ import annotations
 import csv
-from typing import List, Callable
+from typing import List, Callable, Iterable
 
 
 class PyTable:
@@ -43,7 +43,7 @@ class PyTable:
     def data(self, value):
         if not isinstance(value, list):
             raise ValueError("The 'data' attribute must be a list.")
-        if not all(isinstance(row, list) for row in value):
+        if not all(isinstance(row, Iterable) for row in value):
             raise ValueError("All rows in the 'data' attribute must be lists.")
         if len(set(len(row) for row in value)) > 1:
             raise ValueError("All rows in the 'data' attribute must have the same length as each other")
@@ -75,23 +75,24 @@ class PyTable:
         else:
             raise IndexError(f'{header} is not a valid column index for this table')
 
-    def print(self, num_rows: int = -1) -> None:
+    def print(self, num_rows: int = -1, indents: int = 0) -> None:
         """same as above, but will always have headers"""
         # determine the  width of each column
         widths = []
+        margin = '\t'*indents
         for header, column in zip(self.headers, self.get_data_as_columns()):
             width = max([len(str(header))] +[len(str(value)) for value in column])
             widths.append(width)
 
         def print_blank():
-            line = '+'
+            line = margin + '+'
             for width in widths:
                 line += '-' * width + '--+'
             print(line)
 
         # define the function for printing out a full row
         def print_line(row_in):
-            line = '|'
+            line = margin + '|'
             for width, item in zip(widths, row_in):
                 line += f" {str(item).rjust(width)} |"
             print(line)
@@ -279,6 +280,20 @@ class StrippedCsv(PyTable):
         if data is None:
             data = [self.row_format([None]*self.cols)]
         self.data = data
+
+
+class HeadlessData(PyTable):
+
+    def __init__(self, data: List[list]):
+        self.data = data
+
+    @property
+    def cols(self):
+        return len(self.data[0])
+
+    @property
+    def headers(self):
+        return list(range(self.cols))
 
 
 def from_csv(filepath):
