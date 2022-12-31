@@ -1,7 +1,7 @@
 import os
 from typing import Dict, List
 from PySheets import from_csv, StrippedCsv, PyTable, HeadlessData
-from sqlite_utilities import check_tables
+from sqlite_utilities import FinanceDbSession
 import sqlite3
 
 from main import check_lookup
@@ -107,14 +107,10 @@ def main():
     # now for sqlite implementation
     database = 'finance.db'
     try:
-        conn = sqlite3.connect(database)
-        print('Checking tables in database')
-        check_tables(conn)
+        conn = FinanceDbSession(database)
         c = conn.cursor()
-        c.execute("PRAGMA table_info('vendors')")
-        table_info = HeadlessData(c.fetchall())
-        print('\tvendors info')
-        table_info.print(indents=1)
+        c.fetch_query('SELECT * FROM vendors')
+        for row in c.descript
     except sqlite3.Error as error:
         print('Failed to check tables', error)
 

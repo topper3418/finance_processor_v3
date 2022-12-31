@@ -612,7 +612,7 @@ if __name__ == '__main__':
     #with open('sept-oct transactions.csv', 'w') as file:
     #    writer = csv.writer(file)
     #    writer.writerow(all_table.headers)
-    #    writer.writerows([row for row in all_table.data])
+    #    writer.writerows([row for row in all_table.raw_data])
 
     pivot = all_table.pivot('Type', 'Amount')
     pivot.sort(lambda row: row[0])

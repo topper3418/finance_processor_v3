@@ -1,67 +1,64 @@
 import sqlite3
-from PySheets import PyTable, HeadlessData
-
-def create_table(conn):
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
+import pandas
+import pandas_utilities
 
 
-def select_all(conn):
-    c = conn.cursor()
-    c.execute("SELECT * FROM users")
-    return c.fetchall()
+class DbSession:
 
-def check_tables(conn):
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS vendors (
-                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      name VARCHAR(255),
-                      typical_type VARCHAR(255)
-                    );
-    """)
-    conn.commit()
-    c.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    print('\tTables:')
-    table_data = HeadlessData(c.fetchall())
-    table_data.print(indents=1)
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.print_indentation_level = 0
+        self.print('Opening database file')
+        self.connection = sqlite3.connect(filepath)
+        self.print_indentation_level = 1
+        self.commits = 0
+        self.queries = 0
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            print(f'{exc_type=}, {exc_val=}, {exc_tb=}')
+        self.print_indentation_level = 0
+        self.print(f'Closing database file after {self.queries} queries and {self.commits} commits\n')
+        self.connection.close()
+
+    @property
+    def tables(self):
+        table_data = self.fetch_query("SELECT name FROM sqlite_master WHERE type = 'table'")
+        return table_data['name'].tolist()
+
+    def print(self, *args, **kwargs):
+        margin = '\t'*self.print_indentation_level
+        print(margin, end='')
+        print(*args, **kwargs)
+
+    def fetch_query(self, query) -> pandas.DataFrame:
+        results = pandas.read_sql_query(query, self.connection)
+        self.queries += 1
+        return results
+
+    def fetch_single_value(self, query):
+        result_table = self.fetch_query(query)
+        return result_table[0][0]
+
+    def commit_query(self, query):
+        self.connection.execute(query)
+        self.connection.commit()
+        self.commits += 1
+
+    def select_all(self, table):
+        return self.fetch_query(f"SELECT * FROM {table}")
+
+    def get_table_info(self, table_name):
+        if table_name not in self.tables:
+            raise Exception(f'{table_name} not a table')
+        return self.fetch_query(f"PRAGMA table_info('{table_name}')")
 
 
 if __name__ == '__main__':
     # Open a connection to the database
-    try:
-        conn = sqlite3.connect("database.db")
-        check_tables(conn)
-
-        # Create the table
-        #create_table(conn)
-
-        # Insert some data into the table
-        #conn.execute("INSERT INTO users (name, age) VALUES (?, ?)", ("Alice", 25))
-        #conn.execute("INSERT INTO users (name, age) VALUES (?, ?)", ("Bob", 30))
-        #conn.execute("INSERT INTO users (name, age) VALUES (?, ?)", ("Eve", 35))
-        #conn.commit()
-
-        # Select all rows from the table
-        #rows = select_all(conn)
-
-        # Print the rows
-        #for row in rows:
-        #    print(row)
-
-        # Close the connection
-        #conn.close()
-
-    except sqlite3.Error as error:
-        print("failed to run properly", error)
-
-    finally:
-        if conn:
-            # using close() method, we will close
-            # the connection
-            conn.close()
-
-            # After closing connection object, we
-            # will print "the sqlite connection is
-            # closed"
-            print("the sqlite connection is closed")
+    database = 'database.db'
+    with DbSession(database) as session:
+        print(session.tables)

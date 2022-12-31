@@ -1,0 +1,37 @@
+program runs
+look up sessions
+user chooses listed session or new session
+-if new create folder for session
+user chooses view or modify (only modify if new)
+-deal with view later, or as needed
+user gives filepath to new data (have it all in a folder)
+program creates folder for session in session folder
+-seems like session should be an object at this point
+-there should be an init file in the folder, which describes stuff
+session copies data to 'raw data' subfolder in session folder
+session makes a 'processed data' subfolder in session folder
+session makes the database if new, initializes all tables
+-vendors, transactions, accounts, filenames, snippets
+
+session opens the first raw_data file
+-if filenames gets a hit, process the file in the way of that account
+prompt user to type in the column name of each of 'Date', 'Memo', 'Amount'
+program trims and re-orders the file thusly, then adds the "account" and "bank" fields.
+add to processed data folder and save csv
+add corresponding column headers to the accounts table
+loop all raw_data files
+
+go through all raw transactions
+first make sure there are no exact matches in transactions table
+next check all for hits from snippets.
+print a pivot table for types
+
+prompt user to go through a type or upload to db
+-if type
+-user enters row number to examine
+-copy a snippet
+-show all matches for that snippet, prompt to modify it, go back or add a vendor/type
+-if vendors or types are added, add to snippets
+-vendors/types should be checked against existing ones, added if new.
+-repeat until user exits
+if upload, data is added to db to save it
