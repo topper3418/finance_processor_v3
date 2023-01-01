@@ -1,6 +1,7 @@
 from typing import Callable, List, Any, Dict, Tuple
 import os
 import pandas
+import sqlite3
 from pandas_utilities import PyTable
 from sqlite_utilities import DbSession
 
@@ -31,21 +32,17 @@ class Menu:
     def deploy(cls,
                title: str,
                choices: List[str | tuple],
-               zero_choice: str | Tuple[str, Any] = None):
+               zero_choice: str | tuple = None):
         menu = Menu(title, choices, zero_choice)
         return menu.prompt()
 
     def __init__(self,
                  title: str,
                  choices: List[str | tuple],
-                 zero_choice: str | Tuple[str, Any] = None):
+                 zero_choice: str | tuple = None):
         # explicit attributes
         self.title = title
         self._menu_type = self.get_menu_type(choices)
-        if self.menu_type is None:
-            raise Exception('warning, invalid menu type. see docstring for explanation on menu formats')
-        if self.menu_type == 'inconsistent':
-            raise Exception('warning, not all items in menu are of consistent format')
         self.choices = choices
         self.zero_choice = zero_choice
         self._selection = None
@@ -69,7 +66,7 @@ class Menu:
                     return 'mirrored'
                 elif len(item_in) == 2:
                     return 'keyed'
-            return None
+            raise Exception(f"invalid item type for item {item_in}")
 
         menu_type_list = [item_type(item) for item in choices]
         # if its homogeneous return its first item
@@ -120,7 +117,9 @@ class Menu:
         # get everything in the right string format
         choice_string = [choice if self.menu_type == 'indexed' else choice[0] for choice in self.choices]
         # print it out
+        print('\n')
         print(self.title)
+        print()
         for ii, choice in enumerate(choice_string):
             print(f'{ii + 1}: {choice}')
         if self.zero_choice:
@@ -131,7 +130,7 @@ class Menu:
         # print self out
         self.print()
         # prompt for input, selection has validation built into it and will convert to int
-        self.selection = input('>')
+        self.selection = input('> ')
         # we know the selection will be valid if it got this far
         if self.menu_type == 'indexed':
             return self.selection
@@ -141,7 +140,10 @@ class Menu:
             return_list = [self.zero_choice[1]] + [choice[1] for choice in self.choices]
         else:  # only its always possible I havent coded it yet
             raise Exception(f'no prompt made yet for menu type {self.menu_type}')
-        return return_list[self.selection]
+        if self.selection > len(return_list)-1:
+            return self.prompt()
+        else:
+            return return_list[self.selection]
 
 
 class Table(pandas.DataFrame):
@@ -156,17 +158,21 @@ def quit_program():
 # start menu
 
 def start_menu() -> None:
-    """navigates us into an environment where we have a consistent directory tree to work with"""
+    """navigates us into an environment where we have a consistent directory tree to work with."""
     # navigate to the "sessions" directory
     os.chdir('sessions')
     # this is where all the sessions are saved
     saved_sessions = os.listdir()
-    session = Menu.deploy(
-        title='Choose a session:',
-        choices=[tuple(filename) for filename in os.listdir()],
-        zero_choice='new session'
-    )
-    print(f'you chose {session}')
+    # don't bother with a menu if there are no saved sessions
+    if len(saved_sessions) == 0:
+        session = 'new session'
+    # ask user to choose one, or make a new session
+    else:
+        session = Menu.deploy(
+            title='Choose a session:',
+            choices=[(filename,) for filename in saved_sessions],
+            zero_choice=('new session',)
+        )
     if session == 'new session':
         create_new_session()
     else:
@@ -205,6 +211,14 @@ def initialize_db() -> None:
                 );
         """
         conn.commit_query(create_type_table)
+        # add default 'types' to db
+        add_default_types = """
+            INSERT INTO types
+            (type_id)
+            VALUES
+                ('Transfer')
+        """
+        conn.commit_query(add_default_types)
         # create the vendor table, for correlating to types and providing a lookup
         create_vendor_table = """
             CREATE TABLE IF NOT EXISTS 
@@ -271,8 +285,9 @@ def initialize_db() -> None:
 # main menu
 
 def main_menu():
+    session_name = os.path.basename(os.getcwd())
     func = Menu.deploy(
-        title='Main Menu',
+        title=f'{session_name}: Main Menu',
         choices=[
             ('view saved data', view_saved_data_menu),
             ('add new data', add_new_data)
@@ -283,79 +298,191 @@ def main_menu():
 
 
 def view_saved_data_menu():
-    print('placeholder for view saved raw_data menu')
-    main_menu()
+    func = Menu.deploy(
+        title='Saved data menu',
+        choices=[
+            ('Browse DB', db_browser),
+            ('read trimmed data', open_processed_csv)
+        ],
+        zero_choice=('Back', main_menu)
+    )
+    func()
 
 
 def add_new_data():
-    """workflow for adding new raw_data to the program storage
-    Notes on the function tree:
-    add_new_data todo make it all better annotated
-        get_csv_objects
-        get_account_key todo remake the menus in this, split into the sql and user input parts
-            get_filename_snippets
-            get_all_accounts
-        make_table
-            get_account_data
-        get_account_data
-            todo
-        todo some kind of select_columns replacement
+    """workflow for adding new raw_data to the program storage"""
 
-    """
-    # first we copy the raw_data over so we have it
-    # user gives filepath to new raw_data (have it all in a folder)
-    print('enter filepath for new raw_data and press enter, or just press enter to go back:\n\n')
-    filepath = input()
-    if input == '':
+    # user gives filepath to new data, program reads data
+    filepath = input('enter filepath for new raw_data and press enter, or just press enter to go back:\n'
+                     '> ')
+    if filepath == '':
         main_menu()
+    if not filepath.endswith('.csv'):
+        raise Exception('data must be from a csv file')
+    filename = os.path.basename(filepath)
+    data = pandas.read_csv(filepath)
 
-    # copy csv files to memory, paste them into new folder. not broken into a function
-    session_filepath = os.getcwd()  # save current directory for later
-    os.chdir(filepath)  # change to the specified filepath
-    csv_objects = get_csv_objects()  # copy all the csv files
-    os.chdir(session_filepath)  # go back to the session
-    os.chdir('raw_data')  # move into the raw raw_data folder
-    # copy into filepath
-    for filename, data in csv_objects.items():
-        data.to_csv(filename)
+    # program copies it into the raw_data folder
+    os.chdir('raw_data')  # go into the folder
+    data.to_csv(filename, index=False)  # 'paste it'
     os.chdir('..')  # go back to the base filepath
 
-    # take that raw_data already in memory and start processing it for adding to the processed data folder
-    for filename, data in csv_objects.items():
-        # the following should be refactored into a "get account" function
-        account_key = get_account_key(filename)
-        if account_key is None:
-            func = Menu(
-                title='Account not detected in db from filename',
-                choices=[
-                    ('add new account', create_new_account),
-                    ('add rule for existing account', add_snippet_to_db)
-                ],
-                zero_choice=('skip this file', lambda _: None)
-            )
-            account_key = func()
-        if account_key == 'continue':
-            continue
-        # now that we have the account key, get the account
-        table = make_table(account_key, data)
-        # just the row, if I need to access the PyTable functionality later I'll have to drop the [0]
-        account_data = get_account_data(account_key)[0]
+    # process the data
+    account_key = get_account_key_from_filename(filename)  # attempt to autodetect the account
+    if account_key is None:  # if not, get it from the user
+        account_key = get_account_key_from_prompt(filename, data)
+    account_data = get_account_data(account_key)  # get the information from the database for parsing the file
+    table = make_table(account_data, data)  # format the table
+    columns_to_keep = [
+        account_data['date_column'],
+        account_data['memo_column'],
+        account_data['amount_column']
+    ]  # get the column headers we want from account_data
+    table = table.loc[:, columns_to_keep]  # filter columns
+    clean_headers = [
+        'Date',
+        'Memo',
+        'Amount'
+    ]  # clean headers to replace old ones with
+    table.rename(columns=dict(zip(columns_to_keep, clean_headers)))  # rename columns
 
-        table.select_columns(
-            account_data['date_column'],
-            account_data['memo_column'],
-            account_data['amount_column']
+    # put the processed data into processed data folder
+    os.chdir('processed_data')  # go into the folder
+    table.to_csv(filename, index=False)  # 'paste it'
+    os.chdir('..')  # go back to base filepath
+
+    # go back to main menu
+    main_menu()
+
+
+# user interactions
+
+def db_browser():
+    with sqlite3.connect('persistent_data.db') as conn:
+        user_input = ''
+        while user_input.upper() != 'EXIT':
+            user_input = input('\n\nnew query:\n')
+            if user_input.upper() not in ('', 'EXIT', 'COMMIT'):
+                try:
+                    results = pandas.read_sql_query(user_input, conn)
+                    print(results.to_string())
+                except TypeError as err:
+                    print(f"WARNING: '{err}' thrown, ignore if you entered an update query")
+                except pandas.errors.DatabaseError as err:
+                    print(f"WARNING: '{err}' thrown")
+            if user_input.upper() == 'COMMIT':
+                conn.commit()
+    view_saved_data_menu()
+
+
+def open_processed_csv():
+    os.chdir('processed_data')
+    processed_files = os.listdir()
+    file = Menu.deploy(
+        title='Choose a file',
+        choices=[(processed_file,) for processed_file in processed_files],
+        zero_choice=('Back',)
+    )
+    if file == 'Back':
+        os.chdir('..')
+        view_saved_data_menu()
+    else:
+        data = pandas.read_csv(file)
+        print(data.to_string())
+        input('press enter to go back')
+        os.chdir('..')
+        view_saved_data_menu()
+
+
+def create_new_account(filename, sample_data: pandas.DataFrame) -> str:
+    # name the account
+    account_name = input(f"new account name for '{filename}':\n"
+                         '> ')
+    # highlight the part of the snippet that makes it so
+    print(filename)
+    snippet = input('please enter the part of the filename you would like\n'
+                    'matched to use this account type in the future\n'
+                    '> ')
+    # show sample data and prompt for date column, memo column and amount column
+    print('sample data:')
+    print(sample_data.to_string(max_rows=10))
+    date_column = input('\nPlease enter the header for the date column\n'
+                        '> ')
+    memo_column = input('\nPlease enter the header for the memo column\n'
+                        '> ')
+    amount_column = input('\nPlease enter the header for the amount column\n'
+                          '> ')
+    # show all vendors that say internal account and say to choose one or add one
+    vendor_key = get_vendor_key_from_prompt(account_name)  # store the corresponding vendor key
+    # add the row to the table and then query it for the key and return it
+    account_key = add_account_to_db(account_name, date_column, memo_column, amount_column, vendor_key)
+    add_snippet_to_db(snippet, account_key)
+    return account_name
+
+
+def get_account_key_from_prompt(filename, data) -> int:
+    # get a list of account id's if possible, prompt user for choice
+    all_accounts = get_all_accounts()
+    if len(all_accounts) != 0:
+        account_id = Menu.deploy(
+            title=f"No account detected for '{filename}'",
+            choices=[(account,) for account in all_accounts],
+            zero_choice=('create new account',)
         )
-        table.headers = ['Date', 'Memo', 'Amount']
-        table.to_csv(filepath)
+    else:
+        account_id = 'create new account'
+    # if no accounts in db or if user wishes, create a new account
+    if account_id == 'create new account':
+        account_id = create_new_account(filename, data)
+    # get the account key from that account id and return it
+    query = f"""
+        SELECT account_key
+        FROM accounts
+        WHERE account_id = '{account_id}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        return int(conn.fetch_single_value(query))
 
 
-# add_new_data utilities
+def get_vendor_key_from_prompt(account_id) -> int:
+    vendors = get_all_vendors()
+    if len(vendors) != 0:
+        vendor_id = Menu.deploy(
+            title=f'Choose a vendor for {account_id}',
+            choices=[(vendor,) for vendor in sorted(vendors)],
+            zero_choice=('CREATE NEW VENDOR',)
+        )
+    else:
+        vendor_id = 'CREATE NEW VENDOR'
 
-def get_account_key(filename):
+    if vendor_id == 'CREATE NEW VENDOR':
+        vendor_id = input('new vendor id:\n'
+                          '> ')
+        transfer_key = get_type_key_from_id('Transfer')
+        add_vendor_to_db(vendor_id, is_internal_account=True, typical_type_key=transfer_key)
+    query = f"""
+        SELECT vendor_key
+        FROM vendors
+        WHERE vendor_id = '{vendor_id}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        return int(conn.fetch_single_value(query))
+
+
+# DB interactions
+
+
+def get_account_key_from_filename(filename):
+    """Returns the source account key for a given filename, or None if no matching account is found.
+
+    :param filename: The filename to search for.
+    :return: The source account key for the matching account, or None if no match is found.
+    """
     # get the snippets from database for matching accounts to filenames
     filename_snippets = get_filename_snippets()
-    for row in filename_snippets:
+    if filename_snippets.empty:  # return none if the snippets table is empty
+        return None
+    for ind, row in filename_snippets.iterrows():
         snippet = row['snippet']
         if snippet in filename:
             return row['source_account_key']
@@ -363,72 +490,26 @@ def get_account_key(filename):
         return None
 
 
-def create_new_account(filename, sample_data: pandas.DataFrame) -> int:
-    # name the account
-    account_name = input('new account name:   \n'
-                         '>')
-    # highlight the part of the snippet that makes it so
-    print(filename)
-    print('please enter the part of the filename you would like\n'
-          'matched to use this account type in the future\n'
-          '>')
-    snippet = input()
-    # show all existing files that will match
-    add_snippet_to_db(snippet, account_name)
-    # show sample data and prompt for date column, memo column and amount column
-    print('sample data:')
-    print(sample_data.to_string(max_rows=15))
-    date_column = input('\nPlease enter the header for the date column\n'
-                        '>')
-    memo_column = input('\nPlease enter the header for the memo column\n'
-                        '>')
-    amount_column = input('\nPlease enter the header for the amount column\n'
-                          '>')
-    # show all vendors that say internal account and say to choose one or add one
-    vendor_key = get_vendor_key_from_prompt()  # store the corresponding vendor key
-    # add the row to the table and then query it for the key and return it
-    return add_account_to_db(account_name, date_column, memo_column, amount_column, vendor_key)
-
-
-# user interactions
-
-
-def get_account_key_from_prompt() -> int:
-    account_id_menu = Menu(
-        'Existing accounts',
-        get_all_accounts(),
-        return_choice=True
-    )
-    account_id = account_id_menu.prompt()
+def get_account_key_from_id(account_id):
     query = f"""
         SELECT account_key
         FROM accounts
-        WHERE account_id = '{account_id}'
+        WHERE account_id = `{account_id}`
     """
     with DbSession('persistent_data.db') as conn:
-        return conn.fetch_single_value(query)
+        account_key = conn.fetch_single_value(query)
+    return account_key
 
 
-def get_vendor_key_from_prompt() -> int:
-    vendor_id = Menu.deploy(
-        title='Existing vendors',
-        choices=[tuple(vendor) for vendor in sorted(get_all_vendors())],
-        zero_choice=tuple('CREATE NEW VENDOR')
-    )
-    if vendor_id == 'CREATE NEW VENDOR':
-        vendor_id = input('new vendor id:\n'
-                          '>')
-        add_vendor_to_db(vendor_id, is_internal_account=True, typical_type='Transfer')
+def get_type_key_from_id(type_id) -> int:
     query = f"""
-        SELECT vendor_key
-        FROM vendors
-        WHERE vendor_id = '{vendor_id}'
+        SELECT type_key
+        FROM types
+        WHERE type_id = '{type_id}'
     """
     with DbSession('persistent_data.db') as conn:
-        return conn.fetch_single_value(query)
-
-
-# DB interactions
+        type_key = conn.fetch_single_value(query)
+    return int(type_key)
 
 
 def get_all_accounts() -> list:
@@ -436,9 +517,9 @@ def get_all_accounts() -> list:
         SELECT account_id
         FROM accounts
     """
-    with DbSession as conn:
-        accounts = conn.fetch_query(query)
-    return accounts.get_column_as_list('account_id')
+    with DbSession('persistent_data.db') as conn:
+        accounts = conn.fetch_column(query)
+    return accounts
 
 
 def get_all_vendors() -> list:
@@ -446,7 +527,7 @@ def get_all_vendors() -> list:
         SELECT vendor_id
         FROM vendors
     """
-    with DbSession as conn:
+    with DbSession('persistent_data.db') as conn:
         vendors = conn.fetch_column(query)
     return vendors
 
@@ -470,26 +551,26 @@ def get_filename_snippets() -> pandas.DataFrame:
 def get_account_data(account_key: str) -> pandas.Series:
     query = f"""
         SELECT * FROM accounts
-        WHERE account_key = `{account_key}`
+        WHERE account_key = {account_key}
     """
-    with DbSession('database.db') as conn:
+    with DbSession('persistent_data.db') as conn:
         account_data = conn.fetch_query(query)
     return account_data.iloc[0]
 
 
-def add_vendor_to_db(vendor_id, is_internal_account: bool = False, typical_type=None):
+def add_vendor_to_db(vendor_id, is_internal_account: bool = False, typical_type_key=None):
     insert_query = f"""
         INSERT INTO vendors
-        (vendor_id, is_internal_account, typical_type)
+        (vendor_id, is_internal_account, typical_type_key)
         VALUES
-            ({vendor_id}, {int(is_internal_account)}, {typical_type}
+            ('{vendor_id}', {int(is_internal_account)}, {typical_type_key})
     """
     fetch_query = f"""
         SELECT vendor_key
         FROM vendors
         WHERE vendor_id = '{vendor_id}'
     """
-    with DbSession as conn:
+    with DbSession('persistent_data.db') as conn:
         conn.commit_query(insert_query)
         return conn.fetch_single_value(fetch_query)
 
@@ -499,24 +580,26 @@ def add_account_to_db(account_id, date_column, memo_column, amount_column, vendo
         INSERT INTO accounts
         (account_id, date_column, memo_column, amount_column, vendor_key)
         VALUES
-            ({account_id}, {date_column}, {memo_column}, {amount_column}, {vendor_key})
+            ('{account_id}', '{date_column}', '{memo_column}', '{amount_column}', {vendor_key})
     """
     fetch_query = f"""
         SELECT account_key
         FROM accounts
         WHERE account_id = '{account_id}'
     """
-    with DbSession as conn:
+    with DbSession('persistent_data.db') as conn:
         conn.commit_query(insert_query)
-        return conn.fetch_single_value(fetch_query)
+        return int(conn.fetch_single_value(fetch_query))
 
 
 def add_snippet_to_db(snippet, source_account_key, vendor_key=None, type_key=None):
+    vendor_key = 'NULL' if vendor_key is None else vendor_key
+    type_key = 'NULL' if type_key is None else type_key
     insert_query = f"""
         INSERT INTO snippets
         (snippet, source_account_key, vendor_key, type_key)
         VALUES
-            ({snippet}, {source_account_key}, {vendor_key}, {type_key})
+            ('{snippet}', {source_account_key}, {vendor_key}, {type_key})
     """
     fetch_query = f"""
         SELECT snippet_key
@@ -525,48 +608,36 @@ def add_snippet_to_db(snippet, source_account_key, vendor_key=None, type_key=Non
             snippet = '{snippet}' and
             source_account_key = '{source_account_key}'
     """
-    with DbSession as conn:
+    with DbSession('persistent_data.db') as conn:
         conn.commit_query(insert_query)
         return conn.fetch_single_value(fetch_query)
 
-# end add_new_data utilities
+
+# processing functions
 
 
-
-def make_table(account_key, raw_data):
-    account_data = get_account_data(account_key)
+def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame) -> pandas.DataFrame:
     date_column = account_data['date_column']
     memo_column = account_data['memo_column']
     amount_column = account_data['amount_column']
+    # first lets see if the dataframe handled it for us already
+    target_headers = (date_column, memo_column, amount_column)
+    if all(header in raw_data.columns for header in target_headers):
+        return raw_data
     # find the header row by looking for the headers
     for row_num, row in enumerate(raw_data.values.tolist()):
         if (date_column, memo_column, amount_column) in row:
             header_row = row_num
             break
-    else:
+    else:  # if we got this far then we failed to parse it
         # If the header row is not found, raise an exception
         raise ValueError('Header row not found in DataFrame')
     headers = raw_data.iloc[header_row]
-    data = raw_data[header_row + 1:]
+    data = raw_data.iloc[header_row + 1:]
     return pandas.DataFrame(data, columns=headers)
 
 
-
-
-
-
-
-
-def get_csv_objects() -> Dict[str: pandas.DataFrame]:
-    """gets all csv objects from current directory. returns a dict with filename: object pairs"""
-    dict_out: Dict[str: List[list]] = {}
-    for file in os.listdir():
-        if not file.endswith('.csv'):
-            print(f'skipping {file}')
-            continue
-        print(f'loading {file}')
-        dict_out[file] = pandas.read_csv(file)
-    return dict_out
+# execution
 
 
 def main():

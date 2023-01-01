@@ -35,6 +35,7 @@ class DbSession:
         print(*args, **kwargs)
 
     def fetch_query(self, query) -> pandas.DataFrame:
+        print(query)
         results = pandas.read_sql_query(query, self.connection)
         self.queries += 1
         return results
@@ -49,6 +50,7 @@ class DbSession:
         return result_table.iloc[:, 0].tolist()
 
     def commit_query(self, query):
+        print(query)
         self.connection.execute(query)
         self.connection.commit()
         self.commits += 1
@@ -60,6 +62,7 @@ class DbSession:
         if table_name not in self.tables:
             raise Exception(f'{table_name} not a table')
         return self.fetch_query(f"PRAGMA table_info('{table_name}')")
+
 
 
 if __name__ == '__main__':
