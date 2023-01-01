@@ -95,13 +95,16 @@ class Menu:
 
     @selection.setter
     def selection(self, new_value):
-        if new_value is None:
+        if new_value in (None, ''):
             self._selection = None
+            return
         if isinstance(new_value, str):
             try:
                 selection = int(new_value)
             except ValueError:
-                raise ValueError(f'input must be an integer, selecting a menu item. you entered {new_value}')
+                print(f'input must be an integer, selecting a menu item. you entered {new_value}')
+                self._selection = None
+                return
         else:
             raise TypeError('selection must be a string')
         if selection > self.num_choices:
@@ -140,7 +143,7 @@ class Menu:
             return_list = [self.zero_choice[1]] + [choice[1] for choice in self.choices]
         else:  # only its always possible I havent coded it yet
             raise Exception(f'no prompt made yet for menu type {self.menu_type}')
-        if self.selection > len(return_list)-1:
+        if self.selection is None or self.selection > len(return_list)-1:
             return self.prompt()
         else:
             return return_list[self.selection]
@@ -240,13 +243,14 @@ def initialize_db() -> None:
                     date_column         VARCHAR(45),
                     memo_column         VARCHAR(45),
                     amount_column       VARCHAR(45),
+                    parsing_protocol    INTEGER,
                     vendor_key          INTEGER,
                     FOREIGN KEY (vendor_key) REFERENCES vendors(vendor_key)
                 );
         """
         conn.commit_query(create_accounts_table)
         # create the snippets table, for auto-labeling the raw_data initially
-        # if source account key is the only key not null then its for the filename
+        # if source account key is the only key not null then it's for the filename
         create_snippets_table = """
             CREATE TABLE IF NOT EXISTS 
                 snippets (
@@ -320,11 +324,15 @@ def add_new_data():
     if not filepath.endswith('.csv'):
         raise Exception('data must be from a csv file')
     filename = os.path.basename(filepath)
-    data = pandas.read_csv(filepath)
+    try:
+        data = pandas.read_csv(filepath)
+    except FileNotFoundError as err:
+        print(f"file '{filepath}' not found. Make sure its entire filepath is entered")
+        return main_menu()
 
     # program copies it into the raw_data folder
     os.chdir('raw_data')  # go into the folder
-    data.to_csv(filename, index=False)  # 'paste it'
+    data.to_csv(filename, index=False, header=None)  # 'paste it'
     os.chdir('..')  # go back to the base filepath
 
     # process the data
@@ -333,18 +341,6 @@ def add_new_data():
         account_key = get_account_key_from_prompt(filename, data)
     account_data = get_account_data(account_key)  # get the information from the database for parsing the file
     table = make_table(account_data, data)  # format the table
-    columns_to_keep = [
-        account_data['date_column'],
-        account_data['memo_column'],
-        account_data['amount_column']
-    ]  # get the column headers we want from account_data
-    table = table.loc[:, columns_to_keep]  # filter columns
-    clean_headers = [
-        'Date',
-        'Memo',
-        'Amount'
-    ]  # clean headers to replace old ones with
-    table.rename(columns=dict(zip(columns_to_keep, clean_headers)))  # rename columns
 
     # put the processed data into processed data folder
     os.chdir('processed_data')  # go into the folder
@@ -406,16 +402,24 @@ def create_new_account(filename, sample_data: pandas.DataFrame) -> str:
     # show sample data and prompt for date column, memo column and amount column
     print('sample data:')
     print(sample_data.to_string(max_rows=10))
-    date_column = input('\nPlease enter the header for the date column\n'
+    parsing_protocol = Menu.deploy(
+        title='Choose a parsing protocol',
+        choices=[
+            'headers (use header names to identify columns)',
+            'indexed (use numbers to identify columns)'
+        ]
+    )
+    parsing_word = ('_', 'header', 'index')
+    date_column = input(f'\nPlease enter the {parsing_word[parsing_protocol]} for the date column\n'
                         '> ')
-    memo_column = input('\nPlease enter the header for the memo column\n'
+    memo_column = input(f'\nPlease enter the {parsing_word[parsing_protocol]} for the memo column\n'
                         '> ')
-    amount_column = input('\nPlease enter the header for the amount column\n'
+    amount_column = input(f'\nPlease enter the {parsing_word[parsing_protocol]} for the amount column\n'
                           '> ')
     # show all vendors that say internal account and say to choose one or add one
-    vendor_key = get_vendor_key_from_prompt(account_name)  # store the corresponding vendor key
+    vendor_key = get_vendor_key_for_account(account_name)  # store the corresponding vendor key
     # add the row to the table and then query it for the key and return it
-    account_key = add_account_to_db(account_name, date_column, memo_column, amount_column, vendor_key)
+    account_key = add_account_to_db(account_name, date_column, memo_column, amount_column, parsing_protocol, vendor_key)
     add_snippet_to_db(snippet, account_key)
     return account_name
 
@@ -444,9 +448,12 @@ def get_account_key_from_prompt(filename, data) -> int:
         return int(conn.fetch_single_value(query))
 
 
-def get_vendor_key_from_prompt(account_id) -> int:
+def get_vendor_key_for_account(account_id) -> int:
     vendors = get_all_vendors()
-    if len(vendors) != 0:
+
+    if account_id in vendors:
+        vendor_id = account_id
+    elif len(vendors) != 0:
         vendor_id = Menu.deploy(
             title=f'Choose a vendor for {account_id}',
             choices=[(vendor,) for vendor in sorted(vendors)],
@@ -456,8 +463,7 @@ def get_vendor_key_from_prompt(account_id) -> int:
         vendor_id = 'CREATE NEW VENDOR'
 
     if vendor_id == 'CREATE NEW VENDOR':
-        vendor_id = input('new vendor id:\n'
-                          '> ')
+        vendor_id = account_id
         transfer_key = get_type_key_from_id('Transfer')
         add_vendor_to_db(vendor_id, is_internal_account=True, typical_type_key=transfer_key)
     query = f"""
@@ -575,12 +581,12 @@ def add_vendor_to_db(vendor_id, is_internal_account: bool = False, typical_type_
         return conn.fetch_single_value(fetch_query)
 
 
-def add_account_to_db(account_id, date_column, memo_column, amount_column, vendor_key):
+def add_account_to_db(account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key):
     insert_query = f"""
         INSERT INTO accounts
-        (account_id, date_column, memo_column, amount_column, vendor_key)
+        (account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key)
         VALUES
-            ('{account_id}', '{date_column}', '{memo_column}', '{amount_column}', {vendor_key})
+            ('{account_id}', '{date_column}', '{memo_column}', '{amount_column}', {parsing_protocol}, {vendor_key})
     """
     fetch_query = f"""
         SELECT account_key
@@ -620,21 +626,48 @@ def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame) -> panda
     date_column = account_data['date_column']
     memo_column = account_data['memo_column']
     amount_column = account_data['amount_column']
+    parsing_protocol = account_data['parsing_protocol']
     # first lets see if the dataframe handled it for us already
-    target_headers = (date_column, memo_column, amount_column)
-    if all(header in raw_data.columns for header in target_headers):
-        return raw_data
-    # find the header row by looking for the headers
-    for row_num, row in enumerate(raw_data.values.tolist()):
-        if (date_column, memo_column, amount_column) in row:
-            header_row = row_num
-            break
-    else:  # if we got this far then we failed to parse it
-        # If the header row is not found, raise an exception
-        raise ValueError('Header row not found in DataFrame')
-    headers = raw_data.iloc[header_row]
-    data = raw_data.iloc[header_row + 1:]
-    return pandas.DataFrame(data, columns=headers)
+    if parsing_protocol == 1:
+        target_headers = (date_column, memo_column, amount_column)
+        if all(header in raw_data.columns for header in target_headers):
+            table = raw_data
+        # find the header row by looking for the headers
+        else:
+            for row_num, row in enumerate(raw_data.values.tolist()):
+                if (date_column, memo_column, amount_column) in row:
+                    header_row = row_num
+                    break
+            else:  # if we got this far then we failed to parse it
+                # If the header row is not found, raise an exception
+                raise ValueError('Header row not found in DataFrame')
+            headers = raw_data.iloc[header_row]
+            data = raw_data.iloc[header_row + 1:]
+            table = pandas.DataFrame(data, columns=headers)
+        # trim the table based on the selected headers
+        columns_to_keep = [
+            date_column,
+            memo_column,
+            amount_column
+        ]  # get the column headers we want from account_data
+    elif parsing_protocol == 2:
+        # should be able to be handled as im
+        table = raw_data
+        columns_to_keep = [
+            int(date_column),
+            int(memo_column),
+            int(amount_column)
+        ]  # get the column headers we want from account_data
+    else:
+        raise Exception(f'you need to write the protocol for {parsing_protocol=}')
+    table = table.loc[:, columns_to_keep]  # filter columns
+    clean_headers = [
+        'Date',
+        'Memo',
+        'Amount'
+    ]  # clean headers to replace old ones with
+    table.rename(columns=dict(zip(columns_to_keep, clean_headers)))  # rename columns
+    return table
 
 
 # execution

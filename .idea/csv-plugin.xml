@@ -3,14 +3,35 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
-        <entry key="\sessions\test\processed_data\Apple Card Transactions - August 2022.csv">
+        <entry key="/Data/Emily/Checking1.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="\sessions\test\raw_data\Chase4452_Activity20220801_20221211_20221212.csv">
+        <entry key="/Data/Travis/Checking.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/Data/Travis/PreferredChecking.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/Data/Travis/Savings.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/sessions/test/processed_data/Apple Card Transactions - August 2022.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
