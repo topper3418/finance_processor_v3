@@ -41,7 +41,12 @@ class DbSession:
 
     def fetch_single_value(self, query):
         result_table = self.fetch_query(query)
-        return result_table[0][0]
+        return result_table.iloc[0, 0]
+
+    def fetch_column(self, query):
+        """returns a list from a query that should be structured to return only one row"""
+        result_table = self.fetch_query(query)
+        return result_table.iloc[:, 0].tolist()
 
     def commit_query(self, query):
         self.connection.execute(query)
