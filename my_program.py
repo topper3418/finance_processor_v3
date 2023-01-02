@@ -361,7 +361,7 @@ def add_new_raw_data():
 
 def add_new_data_to_database():
     pass
-    # opens a processed csv file and queries the database for matching values in snippets to classify them.
+    # opens a processed csv file and queries the database for matching values in snippets to classify them
     # new rows: snippet, vendor, type
     # print the results for user inspection
     # prompt user to update unknowns (if applicable), update rows, or just upload to database
