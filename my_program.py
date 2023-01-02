@@ -1,8 +1,9 @@
-from typing import Callable, List, Any, Dict, Tuple
 import os
-import pandas
 import sqlite3
-from pandas_utilities import PyTable
+from typing import List, Any
+
+import pandas
+
 from sqlite_utilities import DbSession
 
 
@@ -78,7 +79,7 @@ class Menu:
 
     @property
     def num_choices(self):
-        return len(self.choices)
+        return len(self.choices) + int(self.zero_choice is not None)
 
     @property
     def menu_type(self) -> str:
@@ -107,14 +108,14 @@ class Menu:
                 return
         else:
             raise TypeError('selection must be a string')
-        if selection > self.num_choices:
-            raise IndexError(f'there were a maximum of {self.num_choices} choices, you entered {selection}')
-        if selection == 0:
-            if self.zero_choice:
-                self._selection = 0
-            else:
-                raise IndexError(f"this menu has no valid return for input '0'")
         self._selection = selection
+
+    @property
+    def selection_out_of_bounds(self):
+        too_high = self.selection > len(self.choices)
+        too_low = self.selection < 0
+        zero_choice_error = self.selection == 0 and self.zero_choice is None
+        return too_high or too_low or zero_choice_error
 
     def print(self):
         # get everything in the right string format
@@ -134,6 +135,12 @@ class Menu:
         self.print()
         # prompt for input, selection has validation built into it and will convert to int
         self.selection = input('> ')
+        while self.selection is None or self.selection_out_of_bounds:
+            if self.selection is None:
+                print('selection cannot be empty')
+            if self.selection > len(self.choices):
+                print('selection too high')
+            self.selection = input('> ')
         # we know the selection will be valid if it got this far
         if self.menu_type == 'indexed':
             return self.selection
@@ -141,7 +148,7 @@ class Menu:
             return_list = [self.zero_choice[0]] + [choice[0] for choice in self.choices]
         elif self.menu_type == 'keyed':
             return_list = [self.zero_choice[1]] + [choice[1] for choice in self.choices]
-        else:  # only its always possible I havent coded it yet
+        else:  # only its always possible I haven't coded it yet
             raise Exception(f'no prompt made yet for menu type {self.menu_type}')
         if self.selection is None or self.selection > len(return_list)-1:
             return self.prompt()
@@ -294,7 +301,8 @@ def main_menu():
         title=f'{session_name}: Main Menu',
         choices=[
             ('view saved data', view_saved_data_menu),
-            ('add new data', add_new_data)
+            ('add new raw data', add_new_raw_data),
+            ('commit raw data to database', add_new_data_to_database)
         ],
         zero_choice=('Exit', quit_program)
     )
@@ -313,7 +321,7 @@ def view_saved_data_menu():
     func()
 
 
-def add_new_data():
+def add_new_raw_data():
     """workflow for adding new raw_data to the program storage"""
 
     # user gives filepath to new data, program reads data
@@ -325,7 +333,7 @@ def add_new_data():
         raise Exception('data must be from a csv file')
     filename = os.path.basename(filepath)
     try:
-        data = pandas.read_csv(filepath)
+        data = pandas.read_csv(filepath, header=None)
     except FileNotFoundError as err:
         print(f"file '{filepath}' not found. Make sure its entire filepath is entered")
         return main_menu()
@@ -340,7 +348,7 @@ def add_new_data():
     if account_key is None:  # if not, get it from the user
         account_key = get_account_key_from_prompt(filename, data)
     account_data = get_account_data(account_key)  # get the information from the database for parsing the file
-    table = make_table(account_data, data)  # format the table
+    table = make_table(account_data, data, filename)  # format the table
 
     # put the processed data into processed data folder
     os.chdir('processed_data')  # go into the folder
@@ -351,7 +359,27 @@ def add_new_data():
     main_menu()
 
 
+def add_new_data_to_database():
+    pass
+    # opens a processed csv file and queries the database for matching values in snippets to classify them.
+    # new rows: snippet, vendor, type
+    # print the results for user inspection
+    # prompt user to update unknowns (if applicable), update rows, or just upload to database
+    # update loop:
+        # print the table again (cls)
+        # enter row number or exit prompt
+        # then enter snippet.
+        # then it searches the database for matches and highlight them as clashes.
+        # choose a new snippet or alter the other snippet or merge snippets
+        # search the file as well, print them all out
+        # classify vendor and type for the match
+        # add the snippet
+        # update the table
+    # back to the prompt user menu above
+    # upload to the database
+
 # user interactions
+
 
 def db_browser():
     with sqlite3.connect('persistent_data.db') as conn:
@@ -406,7 +434,7 @@ def create_new_account(filename, sample_data: pandas.DataFrame) -> str:
         title='Choose a parsing protocol',
         choices=[
             'headers (use header names to identify columns)',
-            'indexed (use numbers to identify columns)'
+            'indexed (use numbers to identify columns, headers not shown)'
         ]
     )
     parsing_word = ('_', 'header', 'index')
@@ -622,28 +650,17 @@ def add_snippet_to_db(snippet, source_account_key, vendor_key=None, type_key=Non
 # processing functions
 
 
-def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame) -> pandas.DataFrame:
+def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame, filename) -> pandas.DataFrame:
     date_column = account_data['date_column']
     memo_column = account_data['memo_column']
     amount_column = account_data['amount_column']
     parsing_protocol = account_data['parsing_protocol']
     # first lets see if the dataframe handled it for us already
     if parsing_protocol == 1:
-        target_headers = (date_column, memo_column, amount_column)
-        if all(header in raw_data.columns for header in target_headers):
-            table = raw_data
-        # find the header row by looking for the headers
-        else:
-            for row_num, row in enumerate(raw_data.values.tolist()):
-                if (date_column, memo_column, amount_column) in row:
-                    header_row = row_num
-                    break
-            else:  # if we got this far then we failed to parse it
-                # If the header row is not found, raise an exception
-                raise ValueError('Header row not found in DataFrame')
-            headers = raw_data.iloc[header_row]
-            data = raw_data.iloc[header_row + 1:]
-            table = pandas.DataFrame(data, columns=headers)
+        # reread it as a headed CSV
+        os.chdir('raw_data')
+        table = pandas.read_csv(filename)
+        os.chdir('..')
         # trim the table based on the selected headers
         columns_to_keep = [
             date_column,
@@ -651,8 +668,9 @@ def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame) -> panda
             amount_column
         ]  # get the column headers we want from account_data
     elif parsing_protocol == 2:
-        # should be able to be handled as im
-        table = raw_data
+        # copy raw data so we don't change it
+        table = raw_data.copy()
+        # target headers for rename
         columns_to_keep = [
             int(date_column),
             int(memo_column),
@@ -661,12 +679,12 @@ def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame) -> panda
     else:
         raise Exception(f'you need to write the protocol for {parsing_protocol=}')
     table = table.loc[:, columns_to_keep]  # filter columns
-    clean_headers = [
+    table.columns = [
         'Date',
         'Memo',
         'Amount'
     ]  # clean headers to replace old ones with
-    table.rename(columns=dict(zip(columns_to_keep, clean_headers)))  # rename columns
+    print(table.to_string())
     return table
 
 

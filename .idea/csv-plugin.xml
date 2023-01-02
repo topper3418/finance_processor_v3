@@ -38,6 +38,20 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\sessions\test\processed_data\WF_Checking.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\sessions\test\raw_data\WF_Checking.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>
