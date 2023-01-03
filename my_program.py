@@ -147,9 +147,11 @@ class Menu:
         if self.menu_type == 'indexed':
             return self.selection
         if self.menu_type == 'mirrored':
-            return_list = [self.zero_choice[0]] + [choice[0] for choice in self.choices]
+            return_list = [None if self.zero_choice is None else self.zero_choice[0]] + \
+                          [choice[0] for choice in self.choices]
         elif self.menu_type == 'keyed':
-            return_list = [self.zero_choice[1]] + [choice[1] for choice in self.choices]
+            return_list = [None if self.zero_choice is None else self.zero_choice[1]] + \
+                          [choice[1] for choice in self.choices]
         else:  # only its always possible I haven't coded it yet
             raise Exception(f'no prompt made yet for menu type {self.menu_type}')
         if self.selection is None or self.selection > len(return_list)-1:
@@ -253,6 +255,7 @@ def initialize_db() -> None:
                     memo_column         VARCHAR(45),
                     amount_column       VARCHAR(45),
                     parsing_protocol    INTEGER,
+                    flip_amount         INTEGER,
                     vendor_key          INTEGER,
                     FOREIGN KEY (vendor_key) REFERENCES vendors(vendor_key)
                 );
@@ -301,9 +304,26 @@ def initialize_db() -> None:
                 );
         """
         conn.commit_query(create_filenames_table)
-
-
-##TODO the loop I need to do is add transactions, go through unknown, make snippets and link to snippets
+        # finally, create the transactions view that brings in the keyed thing
+        create_transactions_view = """
+            CREATE VIEW transactions_view AS
+            SELECT 
+                transactions.Date,
+                transactions.Memo,
+                transactions.Amount,
+                accounts.account_id,
+                snippets.snippet,
+                filenames.filename_id
+            FROM
+                transactions
+            LEFT JOIN accounts
+                ON accounts.account_key = transactions.transaction_key
+            LEFT JOIN snippets
+                ON snippets.snippet_key = transactions.transaction_key
+            LEFT JOIN filenames
+                ON filenames.filename_key = transactions.filename_key
+        """
+        conn.commit_query(create_transactions_view)
 
 
 # main menu
@@ -363,7 +383,7 @@ def add_new_raw_data():
     account_data = get_account_data(account_key)  # get the information from the database for parsing the file
     table = make_table(account_data, data, filename)  # format the table
 
-    add_new_data_to_database(account_data, table, filename)
+    add_new_transaction_data_to_database(account_data, table, filename)
 
     # put the processed data into processed data folder
     os.chdir('processed_data')  # go into the folder
@@ -373,78 +393,29 @@ def add_new_raw_data():
     # go back to main menu
     main_menu()
 
-
-def add_new_data_to_database(account_data, data, filename):
-    # DB: get the associated account_key from the filename, and the data from that
-    account_key = account_data['account_key']
-    data['account_key'] = ''
-    data['snippet_key'] = ''
-    # DB: add the filename to the database, but purge it if its not there
-    filename_key = get_filename_key(filename)
-    if filename_key:
-        purge_filename_transactions(filename)
-    else:
-        filename_key = add_filename_to_db(filename)
-    data['filename_key'] = filename_key
-    headers_string = ', '.join(data.columns.tolist())
-    # PROCESSING: new rows: snippet, vendor, type
-    for row_num, row in data.iterrows():
-        memo = row['Memo']
-        # DB: queries the database for matching values in snippets to classify them
-        query = f"""
-            SELECT * from snippets
-            WHERE 
-                '{memo.replace("'", '')}' like '%' + snippet+ '%' and
-                source_account_key = {account_key}
-        """
-        with sqlite3.connect('persistent_data.db') as conn:
-            matching_snippets = pandas.read_sql_query(query, conn)
-        if len(matching_snippets) > 1:
-            print('more than one matching snippets, recommend you alter one of them')
-            print(matching_snippets.to_string())
-            input('default is the first one, nothing else configured\n'
-                  'press enter to continue')
-        # PROCESSING: add matched values to row
-        if not matching_snippets.empty:
-            matching_snippets = matching_snippets.iloc[0]
-            row['snippet_key'] = matching_snippets['snippet_key']
-            row['account_key'] = account_data['account_key']
-        values_list = []
-        for value in row.tolist():
-            new_value = str(value).replace("'", '')
-            values_list.append(new_value)
-        values_string = ', '.join([f'{x}' if str(x).lstrip('-').isnumeric() else f"'{x}'" for x in values_list])
-        # DB: upload the data to the database
-        query = f"""
-            INSERT INTO transactions
-                ({headers_string})
-            VALUES
-                ({values_string})
-        """
-        with DbSession('persistent_data.db') as conn:
-            conn.commit_query(query)
-    # DB: get the view for the combined information
-    # UX: print the results for user inspection
-    # UX: prompt user to update unknowns (if applicable), update rows, or just upload to database
-    # UX LOOP:
-        # UX: print the table again (cls)
-        # UX: enter row number or exit prompt
-        # UX: then enter snippet.
-        # DB: then it searches the database for matches and highlight them as clashes.
-        # UX: choose a new snippet or alter the other snippet or merge snippets
-        # PROCESSING: search the file as well, print them all out
-        # UX: classify vendor and type for the match
-        # DB: add the snippet
-        # PROCESSING: update the table
-    # DB: upload to the database
-    main_menu()
-
 # user interactions
 
 
 def check_db_tables():
-    print('placeholder for db tables workflow')
-    view_saved_data_menu()
+    all_tables = get_all_tables()
+    selected_table = Menu.deploy(
+        title='Choose a table to view',
+        choices=[
+            (table,) for table in all_tables
+        ],
+        zero_choice=('go back',)
+    )
+    if selected_table == 'go back':
+        view_saved_data_menu()
+        return
+    query = f"""
+        SELECT * FROM {selected_table}
+    """
+    with DbSession('persistent_data.db') as conn:
+        table_data = conn.fetch_query(query)
+    print(table_data.to_string())
+    input('press enter to continue')
+    check_db_tables()
 
 
 def db_browser():
@@ -468,6 +439,10 @@ def db_browser():
 def open_processed_csv():
     os.chdir('processed_data')
     processed_files = os.listdir()
+    if len(processed_files) == 0:
+        print('no saved files yet')
+        main_menu()
+        return
     file = Menu.deploy(
         title='Choose a file',
         choices=[(processed_file,) for processed_file in processed_files],
@@ -503,6 +478,13 @@ def create_new_account(filename, sample_data: pandas.DataFrame) -> str:
             'indexed (use numbers to identify columns, headers not shown)'
         ]
     )
+    flip_amount = Menu.deploy(
+        title='Is money going out shown as negative?',
+        choices=[
+            ('yes', 0),
+            ('no', 1)
+        ]
+    )
     parsing_word = ('_', 'header', 'index')
     date_column = input(f'\nPlease enter the {parsing_word[parsing_protocol]} for the date column\n'
                         '> ')
@@ -513,7 +495,7 @@ def create_new_account(filename, sample_data: pandas.DataFrame) -> str:
     # show all vendors that say internal account and say to choose one or add one
     vendor_key = get_vendor_key_for_account(account_name)  # store the corresponding vendor key
     # add the row to the table and then query it for the key and return it
-    account_key = add_account_to_db(account_name, date_column, memo_column, amount_column, parsing_protocol, vendor_key)
+    account_key = add_account_to_db(account_name, date_column, memo_column, amount_column, parsing_protocol, vendor_key, flip_amount)
     add_snippet_to_db(snippet, account_key)
     return account_name
 
@@ -610,6 +592,18 @@ def get_type_key_from_id(type_id) -> int:
     with DbSession('persistent_data.db') as conn:
         type_key = conn.fetch_single_value(query)
     return int(type_key)
+
+
+def get_all_tables() -> list:
+    query = """
+        SELECT name 
+        FROM sqlite_master
+        WHERE type in ('table', 'view')
+        ORDER BY name
+    """
+    with DbSession('persistent_data.db') as conn:
+        tables = conn.fetch_column(query)
+    return tables
 
 
 def get_all_accounts() -> list:
@@ -717,12 +711,12 @@ def add_vendor_to_db(vendor_id, is_internal_account: bool = False, typical_type_
         return conn.fetch_single_value(fetch_query)
 
 
-def add_account_to_db(account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key):
+def add_account_to_db(account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key, flip_amount):
     insert_query = f"""
         INSERT INTO accounts
-        (account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key)
+        (account_id, date_column, memo_column, amount_column, parsing_protocol, vendor_key, flip_amount)
         VALUES
-            ('{account_id}', '{date_column}', '{memo_column}', '{amount_column}', {parsing_protocol}, {vendor_key})
+            ('{account_id}', '{date_column}', '{memo_column}', '{amount_column}', {parsing_protocol}, {vendor_key}, {flip_amount})
     """
     fetch_query = f"""
         SELECT account_key
@@ -774,6 +768,71 @@ def add_filename_to_db(filename):
     return filename_key
 
 
+def add_new_transaction_data_to_database(account_data, data, filename):
+    # DB: get the associated account_key from the filename, and the data from that
+    account_key = account_data['account_key']
+    data['account_key'] = account_key
+    data['snippet_key'] = ''
+    # DB: add the filename to the database, but purge it if its not there
+    filename_key = get_filename_key(filename)
+    if filename_key:
+        purge_filename_transactions(filename)
+    else:
+        filename_key = add_filename_to_db(filename)
+    data['filename_key'] = filename_key
+    headers_string = ', '.join(data.columns.tolist())
+    # PROCESSING: new rows: snippet, vendor, type
+    for row_num, row in data.iterrows():
+        memo = row['Memo']
+        # DB: queries the database for matching values in snippets to classify them
+        query = f"""
+            SELECT * from snippets
+            WHERE 
+                '{memo.replace("'", '')}' like '%' + snippet+ '%' and
+                source_account_key = {account_key}
+        """
+        with sqlite3.connect('persistent_data.db') as conn:
+            matching_snippets = pandas.read_sql_query(query, conn)
+        if len(matching_snippets) > 1:
+            print('more than one matching snippets, recommend you alter one of them')
+            print(matching_snippets.to_string())
+            input('default is the first one, nothing else configured\n'
+                  'press enter to continue')
+        # PROCESSING: add matched values to row
+        if not matching_snippets.empty:
+            matching_snippets = matching_snippets.iloc[0]
+            row['snippet_key'] = matching_snippets['snippet_key']
+            row['account_key'] = account_data['account_key']
+        values_list = []
+        for value in row.tolist():
+            new_value = str(value).replace("'", '')
+            values_list.append(new_value)
+        values_string = ', '.join([f'{x}' if str(x).lstrip('-').isnumeric() else f"'{x}'" for x in values_list])
+        # DB: upload the data to the database
+        query = f"""
+            INSERT INTO transactions
+                ({headers_string})
+            VALUES
+                ({values_string})
+        """
+        with DbSession('persistent_data.db') as conn:
+            conn.commit_query(query)
+    # DB: get the view for the combined information
+    # UX: print the results for user inspection
+    # UX: prompt user to update unknowns (if applicable), update rows, or just upload to database
+    # UX LOOP:
+        # UX: print the table again (cls)
+        # UX: enter row number or exit prompt
+        # UX: then enter snippet.
+        # DB: then it searches the database for matches and highlight them as clashes.
+        # UX: choose a new snippet or alter the other snippet or merge snippets
+        # PROCESSING: search the file as well, print them all out
+        # UX: classify vendor and type for the match
+        # DB: add the snippet
+        # PROCESSING: update the table
+    # DB: upload to the database
+
+
 
 
 # processing functions
@@ -783,6 +842,7 @@ def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame, filename
     date_column = account_data['date_column']
     memo_column = account_data['memo_column']
     amount_column = account_data['amount_column']
+    flip_amount = bool(account_data['flip_amount'])
     parsing_protocol = account_data['parsing_protocol']
     # first lets see if the dataframe handled it for us already
     if parsing_protocol == 1:
@@ -813,6 +873,8 @@ def make_table(account_data: pandas.Series, raw_data: pandas.DataFrame, filename
         'Memo',
         'Amount'
     ]  # clean headers to replace old ones with
+    if flip_amount:
+        table['Amount'] = table['Amount'].apply(lambda x: -float(x))
     print(table.to_string())
     return table
 
