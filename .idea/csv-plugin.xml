@@ -38,6 +38,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/sessions/test/processed_data/PRETTY Apple Card Transactions - August 2022.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\sessions\test\processed_data\WF_Checking.csv">
           <value>
             <Attribute>

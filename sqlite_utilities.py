@@ -42,6 +42,8 @@ class DbSession:
 
     def fetch_single_value(self, query):
         result_table = self.fetch_query(query)
+        if result_table.empty:
+            return None
         return result_table.iloc[0, 0]
 
     def fetch_column(self, query):

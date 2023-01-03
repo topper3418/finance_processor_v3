@@ -1,5 +1,7 @@
+import datetime
 import os
 import sqlite3
+import time
 from typing import List, Any
 
 import pandas
@@ -226,7 +228,7 @@ def initialize_db() -> None:
             INSERT INTO types
             (type_id)
             VALUES
-                ('Transfer')
+                ('Transfer');
         """
         conn.commit_query(add_default_types)
         # create the vendor table, for correlating to types and providing a lookup
@@ -281,13 +283,24 @@ def initialize_db() -> None:
                     memo                VARCHAR(150),
                     amount              INTEGER,
                     account_key         INTEGER,
-                    person              VARCHAR(15),
                     snippet_key         INTEGER,
+                    filename_key        INTEGER,
                     FOREIGN KEY (account_key) REFERENCES accounts(account_key),
-                    FOREIGN KEY (snippet_key) REFERENCES snippets(snippet_key)
+                    FOREIGN KEY (snippet_key) REFERENCES snippets(snippet_key),
+                    FOREIGN KEY (filename_key) REFERENCES filenames(filename_key)
                 );
         """
         conn.commit_query(create_transactions_table)
+        # create the filenames table, for, i dunno. stuff.
+        create_filenames_table = """
+            CREATE TABLE IF NOT EXISTS
+                filenames(
+                    filename_key    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename_id     VARCHAR(75),
+                    date_uploaded   INTEGER
+                );
+        """
+        conn.commit_query(create_filenames_table)
 
 
 ##TODO the loop I need to do is add transactions, go through unknown, make snippets and link to snippets
@@ -302,7 +315,7 @@ def main_menu():
         choices=[
             ('view saved data', view_saved_data_menu),
             ('add new raw data', add_new_raw_data),
-            ('commit raw data to database', add_new_data_to_database)
+            ('Browse DB', db_browser)
         ],
         zero_choice=('Exit', quit_program)
     )
@@ -313,8 +326,8 @@ def view_saved_data_menu():
     func = Menu.deploy(
         title='Saved data menu',
         choices=[
-            ('Browse DB', db_browser),
-            ('read trimmed data', open_processed_csv)
+            ('read trimmed data', open_processed_csv),
+            ('check db tables', check_db_tables)
         ],
         zero_choice=('Back', main_menu)
     )
@@ -350,6 +363,8 @@ def add_new_raw_data():
     account_data = get_account_data(account_key)  # get the information from the database for parsing the file
     table = make_table(account_data, data, filename)  # format the table
 
+    add_new_data_to_database(account_data, table, filename)
+
     # put the processed data into processed data folder
     os.chdir('processed_data')  # go into the folder
     table.to_csv(filename, index=False)  # 'paste it'
@@ -359,26 +374,77 @@ def add_new_raw_data():
     main_menu()
 
 
-def add_new_data_to_database():
-    pass
-    # opens a processed csv file and queries the database for matching values in snippets to classify them
-    # new rows: snippet, vendor, type
-    # print the results for user inspection
-    # prompt user to update unknowns (if applicable), update rows, or just upload to database
-    # update loop:
-        # print the table again (cls)
-        # enter row number or exit prompt
-        # then enter snippet.
-        # then it searches the database for matches and highlight them as clashes.
-        # choose a new snippet or alter the other snippet or merge snippets
-        # search the file as well, print them all out
-        # classify vendor and type for the match
-        # add the snippet
-        # update the table
-    # back to the prompt user menu above
-    # upload to the database
+def add_new_data_to_database(account_data, data, filename):
+    # DB: get the associated account_key from the filename, and the data from that
+    account_key = account_data['account_key']
+    data['account_key'] = ''
+    data['snippet_key'] = ''
+    # DB: add the filename to the database, but purge it if its not there
+    filename_key = get_filename_key(filename)
+    if filename_key:
+        purge_filename_transactions(filename)
+    else:
+        filename_key = add_filename_to_db(filename)
+    data['filename_key'] = filename_key
+    headers_string = ', '.join(data.columns.tolist())
+    # PROCESSING: new rows: snippet, vendor, type
+    for row_num, row in data.iterrows():
+        memo = row['Memo']
+        # DB: queries the database for matching values in snippets to classify them
+        query = f"""
+            SELECT * from snippets
+            WHERE 
+                '{memo.replace("'", '')}' like '%' + snippet+ '%' and
+                source_account_key = {account_key}
+        """
+        with sqlite3.connect('persistent_data.db') as conn:
+            matching_snippets = pandas.read_sql_query(query, conn)
+        if len(matching_snippets) > 1:
+            print('more than one matching snippets, recommend you alter one of them')
+            print(matching_snippets.to_string())
+            input('default is the first one, nothing else configured\n'
+                  'press enter to continue')
+        # PROCESSING: add matched values to row
+        if not matching_snippets.empty:
+            matching_snippets = matching_snippets.iloc[0]
+            row['snippet_key'] = matching_snippets['snippet_key']
+            row['account_key'] = account_data['account_key']
+        values_list = []
+        for value in row.tolist():
+            new_value = str(value).replace("'", '')
+            values_list.append(new_value)
+        values_string = ', '.join([f'{x}' if str(x).lstrip('-').isnumeric() else f"'{x}'" for x in values_list])
+        # DB: upload the data to the database
+        query = f"""
+            INSERT INTO transactions
+                ({headers_string})
+            VALUES
+                ({values_string})
+        """
+        with DbSession('persistent_data.db') as conn:
+            conn.commit_query(query)
+    # DB: get the view for the combined information
+    # UX: print the results for user inspection
+    # UX: prompt user to update unknowns (if applicable), update rows, or just upload to database
+    # UX LOOP:
+        # UX: print the table again (cls)
+        # UX: enter row number or exit prompt
+        # UX: then enter snippet.
+        # DB: then it searches the database for matches and highlight them as clashes.
+        # UX: choose a new snippet or alter the other snippet or merge snippets
+        # PROCESSING: search the file as well, print them all out
+        # UX: classify vendor and type for the match
+        # DB: add the snippet
+        # PROCESSING: update the table
+    # DB: upload to the database
+    main_menu()
 
 # user interactions
+
+
+def check_db_tables():
+    print('placeholder for db tables workflow')
+    view_saved_data_menu()
 
 
 def db_browser():
@@ -566,6 +632,48 @@ def get_all_vendors() -> list:
     return vendors
 
 
+def get_matching_snippets(selected_filename) -> pandas.DataFrame:
+    source_account_key = get_account_key_from_filename(selected_filename)
+    query = f"""
+        SELECT * from snippets
+        WHERE source_account_key = {source_account_key}
+    """
+    with DbSession('persisten_data.db') as conn:
+        return conn.fetch_query(query)
+
+
+def get_filename_key(filename) -> int | None:
+    query = f"""
+        SELECT filename_key 
+        FROM filenames
+        WHERE filename_id = '{filename}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        results = conn.fetch_single_value(query)
+    if results is None:
+        return None
+    return int(results)
+
+
+def purge_filename_transactions(filename):
+    filename_key = get_filename_key(filename)
+    if filename_key is None:
+        return None
+    count_query = f"""
+        SELECT count(*)
+        FROM transactions 
+        WHERE filename_key = {filename_key}
+    """
+    delete_query = f"""
+        DELETE FROM transactions
+        WHERE filename_key = {filename_key}
+    """
+    with DbSession('persistent_data.db') as conn:
+        count = conn.fetch_single_value(count_query)
+        conn.commit_query(delete_query)
+    return count
+
+
 def get_filename_snippets() -> pandas.DataFrame:
     query = """
         SELECT 
@@ -645,6 +753,27 @@ def add_snippet_to_db(snippet, source_account_key, vendor_key=None, type_key=Non
     with DbSession('persistent_data.db') as conn:
         conn.commit_query(insert_query)
         return conn.fetch_single_value(fetch_query)
+
+
+def add_filename_to_db(filename):
+    date = int(time.time())
+    insert_query = f"""
+        INSERT INTO filenames
+            (filename_id, date_uploaded)
+        VALUES
+            ('{filename}', {date})
+    """
+    fetch_query = f"""
+        SELECT filename_key 
+        FROM filenames
+        WHERE filename_id = '{filename}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        conn.commit_query(insert_query)
+        filename_key = conn.fetch_single_value(fetch_query)
+    return filename_key
+
+
 
 
 # processing functions
