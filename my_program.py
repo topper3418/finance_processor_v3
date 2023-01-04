@@ -138,9 +138,9 @@ class Menu:
         # prompt for input, selection has validation built into it and will convert to int
         self.selection = input('> ')
         while self.selection is None or self.selection_out_of_bounds:
-            if self.selection is None:
+            if not self.selection:
                 print('selection cannot be empty')
-            if self.selection > len(self.choices):
+            elif self.selection > len(self.choices):
                 print('selection too high')
             self.selection = input('> ')
         # we know the selection will be valid if it got this far
@@ -317,7 +317,7 @@ def initialize_db() -> None:
             FROM
                 transactions
             LEFT JOIN accounts
-                ON accounts.account_key = transactions.transaction_key
+                ON accounts.account_key = transactions.account_key
             LEFT JOIN snippets
                 ON snippets.snippet_key = transactions.transaction_key
             LEFT JOIN filenames
@@ -347,7 +347,8 @@ def view_saved_data_menu():
         title='Saved data menu',
         choices=[
             ('read trimmed data', open_processed_csv),
-            ('check db tables', check_db_tables)
+            ('check db tables', check_db_tables),
+            ('rectify unmatched transactions', match_unmatched_transactions)
         ],
         zero_choice=('Back', main_menu)
     )
@@ -394,6 +395,148 @@ def add_new_raw_data():
     main_menu()
 
 # user interactions
+
+
+def match_unmatched_transactions():
+    # go through transactions without matched snippets
+    unmatched_transactions = get_unmatched_transactions()
+    print(unmatched_transactions.to_string())
+    for row_num, transaction in unmatched_transactions.iterrows():
+        all_types = get_all_types()
+        all_vendors = get_all_vendors()
+        transaction_string = f"Date: {transaction['date']}\n" \
+                             f"Amount: {transaction['amount']}\n" \
+                             f"Memo: {transaction['memo']}\n"
+        # type related stuff
+        transaction_type = Menu.deploy(
+            title=transaction_string + 'Choose a transaction type',
+            choices=[
+                (trans_type,) for trans_type in all_types
+            ],
+            zero_choice=('create new transaction type',)
+        )
+        if transaction_type == 'create new transaction type':
+            type_key = create_new_transaction_type(transaction)
+        else:
+            type_key = get_type_key_from_id(transaction_type)
+
+        # vendor related stuff
+        vendor_id = Menu.deploy(
+            title=transaction_string + 'Choose a vendor',
+            choices=[
+                (trans_vendor,) for trans_vendor in all_vendors
+            ],
+            zero_choice=('create new vendor',)
+        )
+        if vendor_id == 'create new vendor':
+            vendor_key = create_new_vendor(transaction)
+        else:
+            vendor_key = get_vendor_key_from_id(vendor_id)
+
+        # snippet stuff
+        memo = transaction['memo']
+        account_key = transaction['account_key']
+        transaction_key = transaction['transaction_key']
+        snippet_choice = 'retry'
+        while snippet_choice == 'retry':
+            snippet = input(f'{memo}\n'
+                            f'enter the part of the above memo that identifies it\n'
+                            f'> ')
+            # show user all matching transactions in the database
+            matching_transactions = match_transactions_to_snippet(snippet)
+            print(f"transactions matching '{snippet}'")
+            print(matching_transactions.to_string())
+            snippet_choice = Menu.deploy(
+                title='with the above matches, commit the snippet to database?',
+                choices=[
+                    ('yes', 1),
+                    ('retry', 2)
+                ]
+            )
+        # upload new snippet, update the transaction
+        snippet_key = add_snippet_to_db(snippet, account_key, vendor_key, type_key)
+        update_query = f"""
+            UPDATE transactions
+            SET snippet_key = {snippet_key}
+            WHERE transaction_key = {transaction_key}
+        """
+        with DbSession('persistent_data.db') as conn:
+            conn.commit_query(update_query)
+    print('Completed all unmatched transactions')
+    view_saved_data_menu()
+
+
+def get_unmatched_transactions() -> pandas.DataFrame:
+    query = """
+        SELECT * FROM transactions
+        WHERE snippet_key = ''
+    """
+    with DbSession('persistent_data.db') as conn:
+        results = conn.fetch_query(query)
+    return results
+
+
+def create_new_transaction_type(transaction: pandas.Series) -> int:
+    print(f"Date: {transaction['date']}\n"
+          f"Amount: {transaction['amount']}\n"
+          f"Memo: {transaction['memo']}\n")
+    new_type = input('New type for above transaction?\n'
+                     '> ')
+    insert_query = f"""
+        INSERT INTO types
+        (type_id)
+        VALUES
+            ('{new_type}')
+    """
+    fetch_query = f"""
+        SELECT type_key
+        FROM types
+        WHERE type_id = '{new_type}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        conn.commit_query(insert_query)
+        type_key = conn.fetch_single_value(fetch_query)
+    return int(type_key)
+
+
+def create_new_vendor(transaction: pandas.Series) -> int:
+    print(f"Date: {transaction['date']}\n"
+          f"Amount: {transaction['amount']}\n"
+          f"Memo: {transaction['memo']}\n")
+    new_vendor = input('New vendor for above transaction?\n'
+                       '> ')
+    is_internal_account = Menu.deploy(
+        title='is this an internal account?',
+        choices=[
+            ('yes', 1),
+            ('no', 0)
+        ]
+    )
+    insert_query = f"""
+        INSERT INTO vendors
+        (vendor_id, is_internal_account)
+        VALUES
+            ('{new_vendor}', {is_internal_account})
+    """
+    fetch_query = f"""
+        SELECT vendor_key
+        FROM vendors
+        WHERE vendor_id = '{new_vendor}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        conn.commit_query(insert_query)
+        type_key = conn.fetch_single_value(fetch_query)
+    return int(type_key)
+
+
+def match_transactions_to_snippet(snippet) -> pandas.DataFrame:
+    query = f"""
+        SELECT * FROM transactions
+        WHERE memo LIKE '%{snippet}%'
+    """
+    with DbSession('persistent_data.db') as conn:
+        transactions = conn.fetch_query(query)
+    return transactions
 
 
 def check_db_tables():
@@ -594,6 +737,17 @@ def get_type_key_from_id(type_id) -> int:
     return int(type_key)
 
 
+def get_vendor_key_from_id(vendor_id) -> int:
+    query = f"""
+        SELECT vendor_key
+        FROM vendors
+        WHERE vendor_id = '{vendor_id}'
+    """
+    with DbSession('persistent_data.db') as conn:
+        vendor_key = conn.fetch_single_value(query)
+    return int(vendor_key)
+
+
 def get_all_tables() -> list:
     query = """
         SELECT name 
@@ -620,6 +774,16 @@ def get_all_vendors() -> list:
     query = """
         SELECT vendor_id
         FROM vendors
+    """
+    with DbSession('persistent_data.db') as conn:
+        vendors = conn.fetch_column(query)
+    return vendors
+
+
+def get_all_types() -> list:
+    query = """
+        SELECT type_id
+        FROM types
     """
     with DbSession('persistent_data.db') as conn:
         vendors = conn.fetch_column(query)
@@ -746,7 +910,8 @@ def add_snippet_to_db(snippet, source_account_key, vendor_key=None, type_key=Non
     """
     with DbSession('persistent_data.db') as conn:
         conn.commit_query(insert_query)
-        return conn.fetch_single_value(fetch_query)
+        snippet_key = conn.fetch_single_value(fetch_query)
+    return snippet_key
 
 
 def add_filename_to_db(filename):
@@ -831,8 +996,6 @@ def add_new_transaction_data_to_database(account_data, data, filename):
         # DB: add the snippet
         # PROCESSING: update the table
     # DB: upload to the database
-
-
 
 
 # processing functions
