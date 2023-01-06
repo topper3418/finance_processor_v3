@@ -22,3 +22,5 @@ def get_slash_type():
         # Return the slash type for Linux and MacOS
         return os.sep
 
+
+

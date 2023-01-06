@@ -2,6 +2,7 @@ import datetime
 import os
 import sqlite3
 import time
+import logging
 from typing import List, Any
 
 import pandas
@@ -10,6 +11,13 @@ from sqlite_utilities import DbSession
 
 
 # boilerplate
+database = 'persistent_data.db'
+
+logger = logging.getLogger('my_app')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s'
+)
 
 
 class Menu:
@@ -158,11 +166,6 @@ class Menu:
             return self.prompt()
         else:
             return return_list[self.selection]
-
-
-class Table(pandas.DataFrame):
-    """a wrapper for a pandas dataframe. basically just adding some functionality if needed"""
-    pass
 
 
 def quit_program():
@@ -319,7 +322,7 @@ def initialize_db() -> None:
             LEFT JOIN accounts
                 ON accounts.account_key = transactions.account_key
             LEFT JOIN snippets
-                ON snippets.snippet_key = transactions.transaction_key
+                ON snippets.snippet_key = transactions.snippet_key
             LEFT JOIN filenames
                 ON filenames.filename_key = transactions.filename_key
         """
@@ -401,7 +404,32 @@ def match_unmatched_transactions():
     # go through transactions without matched snippets
     unmatched_transactions = get_unmatched_transactions()
     print(unmatched_transactions.to_string())
-    for row_num, transaction in unmatched_transactions.iterrows():
+    first_loop = True
+    stop_iter = False
+    while not stop_iter:
+        # make sure the user wants to keep going
+        count_query = """select count(*) from transactions where snippet_key = ''"""
+        with DbSession(database) as conn:
+            num_left = int(conn.fetch_single_value(count_query))
+        if not first_loop:
+            stop_iter = Menu.deploy(
+                title=f'There are {num_left} left',
+                choices=[
+                    ('keep going', False),
+                    ('go back', True)
+                ]
+            )
+            if stop_iter:
+                continue
+        first_loop = False
+        top_unmatched_transaction = f"""
+            SELECT * FROM transactions
+            WHERE snippet_key = ''
+            LIMIT 1
+        """
+        with DbSession(database) as conn:
+            transaction = conn.fetch_row(top_unmatched_transaction)
+        # get the top
         all_types = get_all_types()
         all_vendors = get_all_vendors()
         transaction_string = f"Date: {transaction['date']}\n" \
@@ -453,12 +481,13 @@ def match_unmatched_transactions():
                     ('retry', 2)
                 ]
             )
+        transaction_keys = f"({', '.join(str(x) for x in matching_transactions['transaction_key'].tolist())})"
         # upload new snippet, update the transaction
         snippet_key = add_snippet_to_db(snippet, account_key, vendor_key, type_key)
         update_query = f"""
             UPDATE transactions
             SET snippet_key = {snippet_key}
-            WHERE transaction_key = {transaction_key}
+            WHERE transaction_key in {transaction_keys}
         """
         with DbSession('persistent_data.db') as conn:
             conn.commit_query(update_query)
@@ -938,7 +967,7 @@ def add_new_transaction_data_to_database(account_data, data, filename):
     account_key = account_data['account_key']
     data['account_key'] = account_key
     data['snippet_key'] = ''
-    # DB: add the filename to the database, but purge it if its not there
+    # DB: add the filename to the database, but purge it if it's not there
     filename_key = get_filename_key(filename)
     if filename_key:
         purge_filename_transactions(filename)
@@ -946,28 +975,25 @@ def add_new_transaction_data_to_database(account_data, data, filename):
         filename_key = add_filename_to_db(filename)
     data['filename_key'] = filename_key
     headers_string = ', '.join(data.columns.tolist())
+
+    # DB: queries the database for matching values in snippets to classify them
+    query = f"""
+        SELECT * from snippets
+        WHERE source_account_key = {account_key}
+    """
+    with DbSession('persistent_data.db') as conn:
+        matching_snippets = conn.fetch_query(query)
+        logging.debug(f'query successful, {len(matching_snippets)} rows returned')
+
     # PROCESSING: new rows: snippet, vendor, type
     for row_num, row in data.iterrows():
         memo = row['Memo']
-        # DB: queries the database for matching values in snippets to classify them
-        query = f"""
-            SELECT * from snippets
-            WHERE 
-                '{memo.replace("'", '')}' like '%' + snippet+ '%' and
-                source_account_key = {account_key}
-        """
-        with sqlite3.connect('persistent_data.db') as conn:
-            matching_snippets = pandas.read_sql_query(query, conn)
-        if len(matching_snippets) > 1:
-            print('more than one matching snippets, recommend you alter one of them')
-            print(matching_snippets.to_string())
-            input('default is the first one, nothing else configured\n'
-                  'press enter to continue')
-        # PROCESSING: add matched values to row
-        if not matching_snippets.empty:
-            matching_snippets = matching_snippets.iloc[0]
-            row['snippet_key'] = matching_snippets['snippet_key']
-            row['account_key'] = account_data['account_key']
+        match_key = [row['snippet_key'] for _, row in matching_snippets.iterrows() if row['snippet'] in memo]
+        if len(match_key) > 0:
+            match_key = match_key[0]
+        else:
+            match_key = ''
+        row['snippet_key'] = match_key
         values_list = []
         for value in row.tolist():
             new_value = str(value).replace("'", '')

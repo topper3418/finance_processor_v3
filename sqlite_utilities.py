@@ -46,10 +46,20 @@ class DbSession:
             return None
         return result_table.iloc[0, 0]
 
-    def fetch_column(self, query):
+    def fetch_column(self, query) -> list:
         """returns a list from a query that should be structured to return only one row"""
         result_table = self.fetch_query(query)
+        if result_table.empty:
+            return None
         return result_table.iloc[:, 0].tolist()
+
+
+    def fetch_row(self, query) -> pandas.Series:
+        """returns a list from a query that should be structured to return only one row"""
+        result_table = self.fetch_query(query)
+        if result_table.empty:
+            return None
+        return result_table.iloc[0, :]
 
     def commit_query(self, query):
         print(query)
